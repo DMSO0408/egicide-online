@@ -91,6 +91,11 @@ const rankValues: Record<LandlordRank, number> = {
   BJ: 18
 };
 
+const lowContestValue = rankValues["8"];
+const cheapTeammateFollowValue = rankValues["10"];
+const farmerDangerForLandlord = 7;
+const landlordDangerForFarmer = 3;
+
 const modeHumans: Record<LandlordPlayerMode, number> = {
   solo: 1,
   duo: 2,
@@ -441,12 +446,11 @@ function chooseBotCards(room: LandlordRoom, bot: LandlordPlayerState): LandlordC
   const finish = candidates.find((candidate) => candidate.cards.length === bot.hand.length);
   if (finish) return finish.cards;
 
-  if (target && shouldPassForTeam(room, bot, target)) return [];
-
   const scored = candidates
     .map((candidate) => ({ candidate, score: scoreBotCandidate(room, bot, candidate, target) }))
     .sort((a, b) => b.score - a.score);
   const best = scored[0];
+  if (target && shouldYieldToTeammate(room, bot, target, best.candidate)) return [];
   if (target && shouldDeclineCandidate(room, bot, best.candidate, best.score, target)) return [];
   return best.candidate.cards;
 }
@@ -572,6 +576,7 @@ function scoreBotCandidate(room: LandlordRoom, bot: LandlordPlayerState, candida
   const plan = estimateHandPlan(candidate.remaining);
   const targetPlayer = target ? room.players.find((player) => player.id === target.playerId) : undefined;
   const finishBonus = candidate.remaining.length === 0 ? 10000 : 0;
+  const fastTempo = isFastTempoCandidate(candidate, plan);
   let score = finishBonus;
 
   score += candidate.cards.length * 18;
@@ -582,19 +587,24 @@ function scoreBotCandidate(room: LandlordRoom, bot: LandlordPlayerState, candida
   score += plan.bombs * 5;
   score += plan.highCards * 1.5;
 
-  if (targetPlayer) {
-    if (targetPlayer.role === "landlord" && bot.role === "farmer") {
+  if (target && targetPlayer) {
+    if (isOpponent(bot, targetPlayer)) {
       score += 45;
-      if (targetPlayer.hand.length <= 3) score += 160;
-      if (targetPlayer.hand.length <= 1) score += 300;
-    }
-    if (targetPlayer.role === "farmer" && bot.role === "landlord" && targetPlayer.hand.length <= 3) {
-      score += 120;
+      if (isSmallPlay(target)) score += isBombLike(candidate.play) ? -180 : 125;
+      if (isDangerousEnemy(bot, targetPlayer)) score += bot.role === "landlord" ? 180 : 160;
+      if (targetPlayer.hand.length <= 3) score += 90;
+      if (targetPlayer.hand.length <= 1) score += 220;
+    } else if (bot.role === "farmer" && targetPlayer.role === "farmer") {
+      score -= 45;
+      if (isSmallPlay(target) && !isBombLike(candidate.play)) {
+        score += candidate.play.value <= cheapTeammateFollowValue ? 130 : 45;
+      }
+      if (fastTempo) score += 145;
+      if (!fastTempo && target.value >= rankValues.Q) score -= 85;
     }
   } else {
-    const next = room.players[nextIndex(bot.seat)];
-    if (bot.role === "landlord" && next?.role === "farmer" && next.hand.length <= 2) score += candidate.play.value > 12 ? 25 : -15;
-    if (bot.role === "farmer" && room.players[room.landlordIndex ?? -1]?.hand.length <= 3) score += leadPressureBonus(candidate.play);
+    const mostDangerousEnemy = room.players.find((player) => player.id !== bot.id && isDangerousEnemy(bot, player));
+    if (mostDangerousEnemy) score += leadPressureBonus(candidate.play) + (bot.role === "landlord" ? 45 : 30);
   }
 
   if (isBombLike(candidate.play) && candidate.remaining.length > 0) {
@@ -607,18 +617,22 @@ function scoreBotCandidate(room: LandlordRoom, bot: LandlordPlayerState, candida
   return score;
 }
 
-function shouldPassForTeam(room: LandlordRoom, bot: LandlordPlayerState, target: LandlordPlay): boolean {
+function shouldYieldToTeammate(room: LandlordRoom, bot: LandlordPlayerState, target: LandlordPlay, candidate: BotCandidate): boolean {
   const targetPlayer = room.players.find((player) => player.id === target.playerId);
   if (!targetPlayer) return false;
-  if (bot.role === "farmer" && targetPlayer.role === "farmer") return true;
-  return false;
+  if (bot.role !== "farmer" || targetPlayer.role !== "farmer") return false;
+  if (candidate.remaining.length === 0) return false;
+  if (isSmallPlay(target) && !isBombLike(candidate.play) && candidate.play.value <= cheapTeammateFollowValue) return false;
+  if (isFastTempoCandidate(candidate)) return false;
+  return true;
 }
 
 function shouldDeclineCandidate(room: LandlordRoom, bot: LandlordPlayerState, candidate: BotCandidate, score: number, target: LandlordPlay): boolean {
   const targetPlayer = room.players.find((player) => player.id === target.playerId);
   if (candidate.remaining.length === 0) return false;
-  if (targetPlayer?.role === "landlord" && bot.role === "farmer" && targetPlayer.hand.length <= 2) return false;
-  if (targetPlayer?.role === "farmer" && bot.role === "landlord" && targetPlayer.hand.length <= 2) return false;
+  if (targetPlayer && isOpponent(bot, targetPlayer) && isSmallPlay(target) && !isBombLike(candidate.play)) return false;
+  if (targetPlayer && isDangerousEnemy(bot, targetPlayer) && !isBombLike(candidate.play)) return false;
+  if (targetPlayer && isCriticalEnemy(bot, targetPlayer)) return false;
   if (isBombLike(candidate.play) && bombPenalty(room, bot, targetPlayer, candidate) >= 220) return true;
   return score < -70;
 }
@@ -652,6 +666,34 @@ function planCandidateScore(candidate: BotCandidate): number {
   return candidate.cards.length * 20 + playShapeBonus(candidate.play) - candidate.play.value * 0.5 - bombTax;
 }
 
+function isOpponent(bot: LandlordPlayerState, other: LandlordPlayerState): boolean {
+  return Boolean(bot.role && other.role && bot.role !== other.role);
+}
+
+function isDangerousEnemy(bot: LandlordPlayerState, enemy: LandlordPlayerState): boolean {
+  if (!isOpponent(bot, enemy)) return false;
+  const threshold = bot.role === "landlord" && enemy.role === "farmer" ? farmerDangerForLandlord : landlordDangerForFarmer;
+  return enemy.hand.length <= threshold;
+}
+
+function isCriticalEnemy(bot: LandlordPlayerState, enemy: LandlordPlayerState): boolean {
+  return isOpponent(bot, enemy) && enemy.hand.length <= landlordDangerForFarmer;
+}
+
+function isSmallPlay(play: LandlordPlay): boolean {
+  return !isBombLike(play) && play.value <= lowContestValue;
+}
+
+function isFastTempoCandidate(candidate: BotCandidate, plan = estimateHandPlan(candidate.remaining)): boolean {
+  if (candidate.remaining.length <= 2) return true;
+  if (isRunLike(candidate.play) && plan.turns <= 2) return true;
+  return isRunLike(candidate.play) && candidate.cards.length >= 5 && candidate.remaining.length <= 5;
+}
+
+function isRunLike(play: LandlordPlay): boolean {
+  return play.type === "straight" || play.type === "pairSequence" || play.type === "airplane" || play.type === "airplaneSingles" || play.type === "airplanePairs";
+}
+
 function playShapeBonus(play: LandlordPlay): number {
   const bonuses: Record<LandlordPlayType, number> = {
     single: 0,
@@ -673,15 +715,18 @@ function playShapeBonus(play: LandlordPlay): number {
 }
 
 function leadPressureBonus(play: LandlordPlay): number {
-  if (play.type === "single" || play.type === "pair") return play.value >= rankValues.K ? 20 : -10;
-  return 15;
+  if (play.type === "single" || play.type === "pair") return play.value >= rankValues.K ? 35 : -10;
+  if (isRunLike(play)) return 40;
+  return 25;
 }
 
 function bombPenalty(room: LandlordRoom, bot: LandlordPlayerState, targetPlayer: LandlordPlayerState | undefined, candidate: BotCandidate): number {
-  const targetIsDanger = Boolean(targetPlayer && targetPlayer.hand.length <= 2 && targetPlayer.role !== bot.role);
+  const targetIsCritical = Boolean(targetPlayer && isCriticalEnemy(bot, targetPlayer));
+  const targetIsDanger = Boolean(targetPlayer && isDangerousEnemy(bot, targetPlayer));
   const selfNearOut = candidate.remaining.length <= 3;
-  const landlordDanger = bot.role === "farmer" && room.landlordIndex !== undefined && room.players[room.landlordIndex].hand.length <= 2;
-  if (targetIsDanger || selfNearOut || landlordDanger) return 40;
+  const anyEnemyDanger = room.players.some((player) => player.id !== bot.id && isDangerousEnemy(bot, player));
+  if (targetIsCritical || selfNearOut) return 40;
+  if (targetIsDanger || anyEnemyDanger) return 90;
   return candidate.play.type === "rocket" ? 320 : 260;
 }
 
@@ -689,7 +734,7 @@ function endgameBonus(room: LandlordRoom, bot: LandlordPlayerState, candidate: B
   let score = 0;
   if (candidate.remaining.length <= 2) score += 80;
   if (candidate.remaining.length === 1 && candidate.remaining[0].value >= rankValues.A) score += 35;
-  if (targetPlayer && targetPlayer.role !== bot.role && targetPlayer.hand.length <= 2) score += 90;
+  if (targetPlayer && isDangerousEnemy(bot, targetPlayer)) score += 90;
   const next = room.players[nextIndex(bot.seat)];
   if (!targetPlayer && next?.role !== bot.role && next?.hand.length <= 1 && candidate.play.type === "single" && candidate.play.value < rankValues.K) {
     score -= 40;
@@ -698,7 +743,7 @@ function endgameBonus(room: LandlordRoom, bot: LandlordPlayerState, candidate: B
 }
 
 function isEndgame(room: LandlordRoom, bot: LandlordPlayerState): boolean {
-  return bot.hand.length <= 5 || room.players.some((player) => player.hand.length <= 3);
+  return bot.hand.length <= 5 || room.players.some((player) => player.id !== bot.id && isDangerousEnemy(bot, player));
 }
 
 function isBombLike(play: LandlordPlay): boolean {
