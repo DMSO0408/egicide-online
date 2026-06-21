@@ -222,6 +222,28 @@ describe("landlord rules", () => {
     expect(canBeat(play!, room.lastPlay!)).toBe(true);
   });
 
+  it("bot preserves rocket on lead when small cards still need to be cleared", () => {
+    const room = createLandlordRoom("LLAI3D", "A", "p1", "solo");
+    startLandlordGame(room);
+    const bot = room.players[0];
+    const farmer = room.players[1];
+    room.phase = "playing";
+    room.currentPlayerIndex = bot.seat;
+    room.landlordIndex = bot.seat;
+    bot.role = "landlord";
+    farmer.role = "farmer";
+    room.players[2].role = "farmer";
+    farmer.hand = [c("3", "spades"), c("4", "spades"), c("5", "spades"), c("6", "spades"), c("7", "spades"), c("8", "spades"), c("9", "spades")];
+    bot.hand = [c("4", "clubs"), c("4", "diamonds"), c("9", "clubs"), joker("SJ"), joker("BJ")];
+    room.lastPlay = undefined;
+
+    const choice = chooseLandlordBotCards(room, bot.id);
+    const play = analyzeLandlordCards(choice);
+
+    expect(play?.type).toBe("pair");
+    expect(choice.map((card) => card.rank)).toEqual(["4", "4"]);
+  });
+
   it("bot plays the whole hand when it can finish", () => {
     const room = createLandlordRoom("LLAI4", "A", "p1", "solo");
     startLandlordGame(room);

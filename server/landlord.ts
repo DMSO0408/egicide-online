@@ -604,7 +604,11 @@ function scoreBotCandidate(room: LandlordRoom, bot: LandlordPlayerState, candida
     }
   } else {
     const mostDangerousEnemy = room.players.find((player) => player.id !== bot.id && isDangerousEnemy(bot, player));
-    if (mostDangerousEnemy) score += leadPressureBonus(candidate.play) + (bot.role === "landlord" ? 45 : 30);
+    score += leadManagementBonus(candidate, Boolean(mostDangerousEnemy));
+  }
+
+  if (!target && candidate.remaining.length > 0 && isBombLike(candidate.play)) {
+    score -= candidate.play.type === "rocket" ? 420 : 340;
   }
 
   if (isBombLike(candidate.play) && candidate.remaining.length > 0) {
@@ -714,10 +718,17 @@ function playShapeBonus(play: LandlordPlay): number {
   return bonuses[play.type] + Math.max(0, play.length - 1) * 5;
 }
 
-function leadPressureBonus(play: LandlordPlay): number {
-  if (play.type === "single" || play.type === "pair") return play.value >= rankValues.K ? 35 : -10;
-  if (isRunLike(play)) return 40;
-  return 25;
+function leadManagementBonus(candidate: BotCandidate, dangerousEnemy: boolean): number {
+  const play = candidate.play;
+  if (isBombLike(play) && candidate.remaining.length > 0) return dangerousEnemy ? -260 : -180;
+  if (isRunLike(play)) return dangerousEnemy ? 55 : 35;
+  if (play.type === "triple" || play.type === "tripleSingle" || play.type === "triplePair") return dangerousEnemy ? 35 : 20;
+  if (play.type === "pair") return play.value <= rankValues.J ? 30 : -15;
+  if (play.type === "single") {
+    if (play.value <= rankValues.J) return 20;
+    if (play.value >= rankValues.A) return dangerousEnemy ? -45 : -20;
+  }
+  return dangerousEnemy ? 15 : 0;
 }
 
 function bombPenalty(room: LandlordRoom, bot: LandlordPlayerState, targetPlayer: LandlordPlayerState | undefined, candidate: BotCandidate): number {
