@@ -8,6 +8,7 @@ interface PlayerState {
 }
 
 export interface GameRoom {
+  gameType: "egicide";
   code: string;
   players: PlayerState[];
   phase: Phase;
@@ -55,6 +56,7 @@ const monsterStats: Record<"J" | "Q" | "K", { health: number; attack: number }> 
 
 export function createRoom(code: string, hostName: string, hostId: string): GameRoom {
   return {
+    gameType: "egicide",
     code,
     players: [{ id: hostId, name: hostName || "玩家 1", hand: [], connected: true }],
     phase: "lobby",
@@ -174,6 +176,7 @@ export function defend(room: GameRoom, playerId: string, cardIds: string[]): voi
 export function getPlayerView(room: GameRoom, playerId: string): PlayerView {
   const self = room.players.find((player) => player.id === playerId);
   return {
+    gameType: "egicide",
     roomCode: room.code,
     selfId: playerId,
     players: room.players.map((player) => ({

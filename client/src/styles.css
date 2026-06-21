@@ -74,6 +74,24 @@ input {
   gap: 10px;
 }
 
+.gameChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.choice {
+  background: #eef4f2;
+  color: #1f2933;
+  border: 1px solid #c8d5d0;
+}
+
+.choice.active {
+  background: #205f5f;
+  color: white;
+  border-color: #205f5f;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -96,6 +114,23 @@ input {
 .board {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) 280px;
+  gap: 16px;
+}
+
+.landlordBoard {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 16px;
+}
+
+.playArea {
+  display: grid;
+  gap: 16px;
+}
+
+.landlordMeta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
 
@@ -163,6 +198,10 @@ h2 {
   gap: 9px;
 }
 
+.landlordHand {
+  gap: 6px;
+}
+
 .compact {
   min-height: 74px;
   align-items: center;
@@ -190,6 +229,11 @@ h2 {
   box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
   padding: 6px;
   text-align: left;
+}
+
+.landlordCard {
+  width: 50px;
+  height: 72px;
 }
 
 .card.large {
@@ -225,6 +269,12 @@ h2 {
   color: #6c6f75;
 }
 
+.playTag {
+  align-self: center;
+  color: #6c6f75;
+  font-size: 14px;
+}
+
 .error {
   color: #b32635;
   margin: 0;
@@ -251,6 +301,11 @@ h2 {
   }
 
   .board {
+    grid-template-columns: 1fr;
+  }
+
+  .landlordBoard,
+  .landlordMeta {
     grid-template-columns: 1fr;
   }
 
