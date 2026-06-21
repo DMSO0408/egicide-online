@@ -218,6 +218,7 @@ function broadcast(room: AnyRoom): void {
 
 function scheduleBots(room: AnyRoom): void {
   if (room.gameType !== "landlord" || !isLandlordBotTurn(room) || botTimers.has(room.code)) return;
+  const delayMs = 500 + Math.floor(Math.random() * 700);
   const timer = setTimeout(() => {
     botTimers.delete(room.code);
     const latest = rooms.get(room.code);
@@ -229,7 +230,7 @@ function scheduleBots(room: AnyRoom): void {
     }
     broadcast(latest);
     scheduleBots(latest);
-  }, 650);
+  }, delayMs);
   botTimers.set(room.code, timer);
 }
 

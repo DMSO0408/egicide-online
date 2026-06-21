@@ -33,6 +33,19 @@ interface BidState {
   grabQueue: number[];
 }
 
+interface BotCandidate {
+  play: LandlordPlay;
+  cards: LandlordCard[];
+  remaining: LandlordCard[];
+}
+
+interface HandPlan {
+  turns: number;
+  singles: number;
+  bombs: number;
+  highCards: number;
+}
+
 export interface LandlordRoom {
   gameType: "landlord";
   code: string;
@@ -285,6 +298,12 @@ export function runLandlordBotTurn(room: LandlordRoom): void {
   }
 }
 
+export function chooseLandlordBotCards(room: LandlordRoom, botId?: string): LandlordCard[] {
+  const bot = botId ? room.players.find((player) => player.id === botId) : currentPlayer(room);
+  if (!bot) throw new Error("找不到电脑玩家。");
+  return chooseBotCards(room, bot);
+}
+
 export function analyzeLandlordCards(cards: LandlordCard[], playerId = "", playerName = ""): LandlordPlay | undefined {
   if (cards.length === 0) return undefined;
   const sorted = [...cards].sort((a, b) => a.value - b.value);
@@ -415,11 +434,275 @@ function assignLandlord(room: LandlordRoom, landlordIndex: number): void {
 }
 
 function chooseBotCards(room: LandlordRoom, bot: LandlordPlayerState): LandlordCard[] {
-  const wholeHand = analyzeLandlordCards(bot.hand, bot.id, bot.name);
-  if (wholeHand && (!room.lastPlay || room.lastPlay.playerId === bot.id || canBeat(wholeHand, room.lastPlay))) return [...bot.hand];
-  if (!room.lastPlay || room.lastPlay.playerId === bot.id) return [lowestCard(bot.hand)];
-  const candidate = findSmallestCounter(bot.hand, room.lastPlay);
-  return candidate ?? [];
+  const target = room.lastPlay && room.lastPlay.playerId !== bot.id ? room.lastPlay : undefined;
+  const candidates = generateLegalCandidates(bot.hand, target, bot.id, bot.name);
+  if (candidates.length === 0) return [];
+
+  const finish = candidates.find((candidate) => candidate.cards.length === bot.hand.length);
+  if (finish) return finish.cards;
+
+  if (target && shouldPassForTeam(room, bot, target)) return [];
+
+  const scored = candidates
+    .map((candidate) => ({ candidate, score: scoreBotCandidate(room, bot, candidate, target) }))
+    .sort((a, b) => b.score - a.score);
+  const best = scored[0];
+  if (target && shouldDeclineCandidate(room, bot, best.candidate, best.score, target)) return [];
+  return best.candidate.cards;
+}
+
+function generateLegalCandidates(hand: LandlordCard[], target?: LandlordPlay, playerId = "", playerName = ""): BotCandidate[] {
+  const seen = new Set<string>();
+  const candidates: BotCandidate[] = [];
+  const groups = groupCardsByValue(hand);
+  const add = (cards: LandlordCard[]) => {
+    const key = cards.map((card) => card.id).sort().join("|");
+    if (seen.has(key)) return;
+    const play = analyzeLandlordCards(cards, playerId, playerName);
+    if (!play) return;
+    if (target && !canBeat(play, target)) return;
+    seen.add(key);
+    candidates.push({
+      play,
+      cards: [...cards].sort((a, b) => a.value - b.value),
+      remaining: removeCards(hand, cards)
+    });
+  };
+
+  for (const cards of groups.values()) {
+    add(cards.slice(0, 1));
+    if (cards.length >= 2) add(cards.slice(0, 2));
+    if (cards.length >= 3) add(cards.slice(0, 3));
+    if (cards.length === 4) add(cards.slice(0, 4));
+  }
+  const rocketCards = rocket(hand);
+  if (rocketCards) add(rocketCards);
+
+  for (const triple of groupsWithCount(groups, 3, 0)) {
+    const excluded = [triple[0].value];
+    addWithEachSingle(hand, triple, excluded, add);
+    addWithEachPair(groups, triple, excluded, add);
+  }
+
+  for (const four of groupsWithCount(groups, 4, 0)) {
+    const excluded = [four[0].value];
+    const singles = lowestExcluding(hand, excluded, 2);
+    if (singles) add([...four, ...singles]);
+    const pairs = lowestPairAttachments(groups, excluded, 2);
+    if (pairs) add([...four, ...pairs]);
+  }
+
+  addSequences(groups, 1, 5, add);
+  addSequences(groups, 2, 3, add);
+  addAirplanes(hand, groups, add);
+
+  return candidates.sort((a, b) => a.cards.length - b.cards.length || a.play.value - b.play.value);
+}
+
+function removeCards(hand: LandlordCard[], selected: LandlordCard[]): LandlordCard[] {
+  const selectedIds = new Set(selected.map((card) => card.id));
+  return hand.filter((card) => !selectedIds.has(card.id)).sort((a, b) => a.value - b.value || suitSort(a.suit) - suitSort(b.suit));
+}
+
+function addWithEachSingle(
+  hand: LandlordCard[],
+  base: LandlordCard[],
+  excluded: number[],
+  add: (cards: LandlordCard[]) => void
+): void {
+  for (const card of [...hand].sort((a, b) => a.value - b.value || suitSort(a.suit) - suitSort(b.suit))) {
+    if (!excluded.includes(card.value)) add([...base, card]);
+  }
+}
+
+function addWithEachPair(
+  groups: Map<number, LandlordCard[]>,
+  base: LandlordCard[],
+  excluded: number[],
+  add: (cards: LandlordCard[]) => void
+): void {
+  for (const [value, cards] of [...groups.entries()].sort((a, b) => a[0] - b[0])) {
+    if (!excluded.includes(value) && cards.length >= 2) add([...base, ...cards.slice(0, 2)]);
+  }
+}
+
+function addSequences(
+  groups: Map<number, LandlordCard[]>,
+  count: number,
+  minLength: number,
+  add: (cards: LandlordCard[]) => void
+): void {
+  const values = [...groups.entries()]
+    .filter(([value, cards]) => value <= rankValues.A && cards.length >= count)
+    .map(([value]) => value)
+    .sort((a, b) => a - b);
+
+  for (let start = 0; start < values.length; start += 1) {
+    for (let end = start + minLength; end <= values.length; end += 1) {
+      const window = values.slice(start, end);
+      if (!isSequence(window)) break;
+      add(window.flatMap((value) => groups.get(value)!.slice(0, count)));
+    }
+  }
+}
+
+function addAirplanes(hand: LandlordCard[], groups: Map<number, LandlordCard[]>, add: (cards: LandlordCard[]) => void): void {
+  const tripleValues = [...groups.entries()]
+    .filter(([value, cards]) => value <= rankValues.A && cards.length >= 3)
+    .map(([value]) => value)
+    .sort((a, b) => a - b);
+
+  for (let start = 0; start < tripleValues.length; start += 1) {
+    for (let end = start + 2; end <= tripleValues.length; end += 1) {
+      const values = tripleValues.slice(start, end);
+      if (!isSequence(values)) break;
+      const base = values.flatMap((value) => groups.get(value)!.slice(0, 3));
+      add(base);
+
+      const singles = lowestDistinctSinglesExcluding(hand, values, values.length);
+      if (singles) add([...base, ...singles]);
+
+      const pairs = lowestPairAttachments(groups, values, values.length);
+      if (pairs) add([...base, ...pairs]);
+    }
+  }
+}
+
+function scoreBotCandidate(room: LandlordRoom, bot: LandlordPlayerState, candidate: BotCandidate, target?: LandlordPlay): number {
+  const plan = estimateHandPlan(candidate.remaining);
+  const targetPlayer = target ? room.players.find((player) => player.id === target.playerId) : undefined;
+  const finishBonus = candidate.remaining.length === 0 ? 10000 : 0;
+  let score = finishBonus;
+
+  score += candidate.cards.length * 18;
+  score += playShapeBonus(candidate.play);
+  score -= candidate.play.value * (target ? 1.1 : 0.65);
+  score -= plan.turns * 32;
+  score -= plan.singles * 7;
+  score += plan.bombs * 5;
+  score += plan.highCards * 1.5;
+
+  if (targetPlayer) {
+    if (targetPlayer.role === "landlord" && bot.role === "farmer") {
+      score += 45;
+      if (targetPlayer.hand.length <= 3) score += 160;
+      if (targetPlayer.hand.length <= 1) score += 300;
+    }
+    if (targetPlayer.role === "farmer" && bot.role === "landlord" && targetPlayer.hand.length <= 3) {
+      score += 120;
+    }
+  } else {
+    const next = room.players[nextIndex(bot.seat)];
+    if (bot.role === "landlord" && next?.role === "farmer" && next.hand.length <= 2) score += candidate.play.value > 12 ? 25 : -15;
+    if (bot.role === "farmer" && room.players[room.landlordIndex ?? -1]?.hand.length <= 3) score += leadPressureBonus(candidate.play);
+  }
+
+  if (isBombLike(candidate.play) && candidate.remaining.length > 0) {
+    score -= bombPenalty(room, bot, targetPlayer, candidate);
+  }
+  if (isEndgame(room, bot)) {
+    score += endgameBonus(room, bot, candidate, targetPlayer);
+  }
+
+  return score;
+}
+
+function shouldPassForTeam(room: LandlordRoom, bot: LandlordPlayerState, target: LandlordPlay): boolean {
+  const targetPlayer = room.players.find((player) => player.id === target.playerId);
+  if (!targetPlayer) return false;
+  if (bot.role === "farmer" && targetPlayer.role === "farmer") return true;
+  return false;
+}
+
+function shouldDeclineCandidate(room: LandlordRoom, bot: LandlordPlayerState, candidate: BotCandidate, score: number, target: LandlordPlay): boolean {
+  const targetPlayer = room.players.find((player) => player.id === target.playerId);
+  if (candidate.remaining.length === 0) return false;
+  if (targetPlayer?.role === "landlord" && bot.role === "farmer" && targetPlayer.hand.length <= 2) return false;
+  if (targetPlayer?.role === "farmer" && bot.role === "landlord" && targetPlayer.hand.length <= 2) return false;
+  if (isBombLike(candidate.play) && bombPenalty(room, bot, targetPlayer, candidate) >= 220) return true;
+  return score < -70;
+}
+
+function estimateHandPlan(hand: LandlordCard[]): HandPlan {
+  const groups = groupCardsByValue(hand);
+  const singles = [...groups.values()].filter((cards) => cards.length === 1).length;
+  const bombs = [...groups.values()].filter((cards) => cards.length === 4).length + (rocket(hand) ? 1 : 0);
+  const highCards = hand.filter((card) => card.value >= rankValues.A).length;
+  let turns = 0;
+  let remaining = [...hand];
+  for (let i = 0; i < 24 && remaining.length > 0; i += 1) {
+    const candidates = generateLeadPlanCandidates(remaining);
+    const best = candidates[0];
+    if (!best) break;
+    turns += 1;
+    remaining = removeCards(remaining, best.cards);
+  }
+  turns += remaining.length;
+  return { turns, singles, bombs, highCards };
+}
+
+function generateLeadPlanCandidates(hand: LandlordCard[]): BotCandidate[] {
+  return generateLegalCandidates(hand)
+    .filter((candidate) => candidate.cards.length > 0)
+    .sort((a, b) => planCandidateScore(b) - planCandidateScore(a));
+}
+
+function planCandidateScore(candidate: BotCandidate): number {
+  const bombTax = isBombLike(candidate.play) ? 30 : 0;
+  return candidate.cards.length * 20 + playShapeBonus(candidate.play) - candidate.play.value * 0.5 - bombTax;
+}
+
+function playShapeBonus(play: LandlordPlay): number {
+  const bonuses: Record<LandlordPlayType, number> = {
+    single: 0,
+    pair: 5,
+    triple: 9,
+    tripleSingle: 13,
+    triplePair: 17,
+    straight: 28,
+    pairSequence: 32,
+    airplane: 40,
+    airplaneSingles: 45,
+    airplanePairs: 50,
+    fourTwoSingles: 18,
+    fourTwoPairs: 22,
+    bomb: 25,
+    rocket: 35
+  };
+  return bonuses[play.type] + Math.max(0, play.length - 1) * 5;
+}
+
+function leadPressureBonus(play: LandlordPlay): number {
+  if (play.type === "single" || play.type === "pair") return play.value >= rankValues.K ? 20 : -10;
+  return 15;
+}
+
+function bombPenalty(room: LandlordRoom, bot: LandlordPlayerState, targetPlayer: LandlordPlayerState | undefined, candidate: BotCandidate): number {
+  const targetIsDanger = Boolean(targetPlayer && targetPlayer.hand.length <= 2 && targetPlayer.role !== bot.role);
+  const selfNearOut = candidate.remaining.length <= 3;
+  const landlordDanger = bot.role === "farmer" && room.landlordIndex !== undefined && room.players[room.landlordIndex].hand.length <= 2;
+  if (targetIsDanger || selfNearOut || landlordDanger) return 40;
+  return candidate.play.type === "rocket" ? 320 : 260;
+}
+
+function endgameBonus(room: LandlordRoom, bot: LandlordPlayerState, candidate: BotCandidate, targetPlayer?: LandlordPlayerState): number {
+  let score = 0;
+  if (candidate.remaining.length <= 2) score += 80;
+  if (candidate.remaining.length === 1 && candidate.remaining[0].value >= rankValues.A) score += 35;
+  if (targetPlayer && targetPlayer.role !== bot.role && targetPlayer.hand.length <= 2) score += 90;
+  const next = room.players[nextIndex(bot.seat)];
+  if (!targetPlayer && next?.role !== bot.role && next?.hand.length <= 1 && candidate.play.type === "single" && candidate.play.value < rankValues.K) {
+    score -= 40;
+  }
+  return score;
+}
+
+function isEndgame(room: LandlordRoom, bot: LandlordPlayerState): boolean {
+  return bot.hand.length <= 5 || room.players.some((player) => player.hand.length <= 3);
+}
+
+function isBombLike(play: LandlordPlay): boolean {
+  return play.type === "bomb" || play.type === "rocket";
 }
 
 function findSmallestCounter(hand: LandlordCard[], target: LandlordPlay): LandlordCard[] | undefined {
@@ -518,6 +801,16 @@ function findSequence(groups: Map<number, LandlordCard[]>, count: number, length
 function lowestExcluding(hand: LandlordCard[], excluded: number[], count: number): LandlordCard[] | undefined {
   const cards = hand.filter((card) => !excluded.includes(card.value)).sort((a, b) => a.value - b.value);
   return cards.length >= count ? cards.slice(0, count) : undefined;
+}
+
+function lowestDistinctSinglesExcluding(hand: LandlordCard[], excluded: number[], count: number): LandlordCard[] | undefined {
+  const groups = groupCardsByValue(hand);
+  const cards = [...groups.entries()]
+    .filter(([value]) => !excluded.includes(value))
+    .sort((a, b) => a[0] - b[0])
+    .slice(0, count)
+    .map(([, group]) => group[0]);
+  return cards.length === count ? cards : undefined;
 }
 
 function lowestPairAttachments(groups: Map<number, LandlordCard[]>, excluded: number[], count: number): LandlordCard[] | undefined {
