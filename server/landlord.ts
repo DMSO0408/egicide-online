@@ -9,6 +9,7 @@ import type {
   LandlordPublicPlayer,
   LandlordRank,
   LandlordRole,
+  LandlordTurnState,
   Suit
 } from "../shared/types";
 
@@ -45,6 +46,7 @@ export interface LandlordRoom {
   landlordIndex?: number;
   bidState?: BidState;
   lastPlay?: LandlordPlay;
+  turnStates: LandlordTurnState[];
   passCount: number;
   winner?: "landlord" | "farmers";
   log: string[];
@@ -93,6 +95,7 @@ export function createLandlordRoom(code: string, hostName: string, hostId: strin
     deck: [],
     bottomCards: [],
     currentPlayerIndex: 0,
+    turnStates: [],
     passCount: 0,
     log: [`斗地主房间已创建，模式：${modeLabel(playerMode)}。`]
   };
@@ -191,6 +194,7 @@ export function playLandlordCards(room: LandlordRoom, playerId: string, cardIds:
   }
 
   room.lastPlay = play;
+  setTurnState(room, player.id, { playerId: player.id, status: "played", play });
   room.passCount = 0;
   room.log.unshift(`${player.name} 打出 ${formatLandlordCards(cards)}。`);
   if (player.hand.length === 0) {
@@ -210,11 +214,13 @@ export function passLandlord(room: LandlordRoom, playerId: string): void {
   if (!room.lastPlay || room.lastPlay.playerId === player.id) throw new Error("这一轮你必须出牌。");
 
   room.passCount += 1;
+  setTurnState(room, player.id, { playerId: player.id, status: "passed" });
   room.log.unshift(`${player.name} 不出。`);
   if (room.passCount >= 2) {
     const leadIndex = room.players.findIndex((item) => item.id === room.lastPlay?.playerId);
     room.currentPlayerIndex = leadIndex;
     room.lastPlay = undefined;
+    clearTurnStates(room);
     room.passCount = 0;
     room.log.unshift(`${room.players[leadIndex].name} 获得新一轮出牌权。`);
     return;
@@ -237,6 +243,7 @@ export function getLandlordPlayerView(room: LandlordRoom, playerId: string): Lan
     landlordId: room.landlordIndex === undefined ? undefined : room.players[room.landlordIndex]?.id,
     bottomCards: room.phase === "lobby" || room.phase === "bidding" ? [] : [...room.bottomCards],
     lastPlay: room.lastPlay,
+    turnStates: [...room.turnStates],
     passCount: room.passCount,
     bid: room.bidState
       ? {
@@ -375,6 +382,7 @@ function dealForBidding(room: LandlordRoom, message: string): void {
   room.phase = "bidding";
   room.landlordIndex = undefined;
   room.lastPlay = undefined;
+  clearTurnStates(room);
   room.passCount = 0;
   room.winner = undefined;
   const starterIndex = Math.floor(Math.random() * 3);
@@ -401,6 +409,7 @@ function assignLandlord(room: LandlordRoom, landlordIndex: number): void {
   room.currentPlayerIndex = landlordIndex;
   room.bidState = undefined;
   room.lastPlay = undefined;
+  clearTurnStates(room);
   room.passCount = 0;
   room.log.unshift(`${landlord.name} 成为地主，获得底牌 ${formatLandlordCards(room.bottomCards)}。`);
 }
@@ -586,6 +595,16 @@ function nextIndexes(start: number, count: number): number[] {
 
 function currentPlayer(room: LandlordRoom): LandlordPlayerState {
   return room.players[room.currentPlayerIndex];
+}
+
+function clearTurnStates(room: LandlordRoom): void {
+  room.turnStates = room.players.map((player) => ({ playerId: player.id, status: "waiting" }));
+}
+
+function setTurnState(room: LandlordRoom, playerId: string, state: LandlordTurnState): void {
+  const index = room.turnStates.findIndex((item) => item.playerId === playerId);
+  if (index === -1) room.turnStates.push(state);
+  else room.turnStates[index] = state;
 }
 
 function publicPlayer(player: LandlordPlayerState): LandlordPublicPlayer {

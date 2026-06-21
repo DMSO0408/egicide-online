@@ -93,6 +93,12 @@ export interface LandlordPublicPlayer {
   role?: LandlordRole;
 }
 
+export interface LandlordTurnState {
+  playerId: string;
+  status: "waiting" | "played" | "passed";
+  play?: LandlordPlay;
+}
+
 export interface LandlordBidView {
   currentPlayerId?: string;
   calledById?: string;
@@ -113,6 +119,7 @@ export interface LandlordPlayerView {
   landlordId?: string;
   bottomCards: LandlordCard[];
   lastPlay?: LandlordPlay;
+  turnStates: LandlordTurnState[];
   passCount: number;
   bid?: LandlordBidView;
   log: string[];

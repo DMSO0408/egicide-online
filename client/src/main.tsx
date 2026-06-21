@@ -10,6 +10,7 @@ import type {
   JoinResult,
   LandlordBidAction,
   LandlordCard,
+  LandlordPlayType,
   LandlordPlayerMode,
   LandlordPlayerView,
   PlayerView,
@@ -250,9 +251,10 @@ function LandlordTable({
   const humans = view.players.filter((player) => !player.bot).length;
   const canStart = view.phase === "lobby" && humans >= view.requiredHumans;
   const canPass = isMyTurn && Boolean(view.lastPlay && view.lastPlay.playerId !== view.selfId);
+  const seats = landlordSeats(view);
 
   return (
-    <main className="shell">
+    <main className="shell landlordShell">
       <header className="topbar">
         <div>
           <strong>斗地主 · {view.roomCode}</strong>
@@ -262,77 +264,110 @@ function LandlordTable({
       </header>
 
       <section className="landlordBoard">
-        <aside className="side">
-          <PlayerList players={view.players} selfId={view.selfId} />
-          <div className="stats">
-            <span>真人 {humans} / {view.requiredHumans}</span>
-            <span>模式 {modeLabel(view.playerMode)}</span>
-          </div>
-        </aside>
+        <PlayerSeat className="leftSeat" player={seats.left} selfId={view.selfId} />
+        <PlayerSeat className="rightSeat" player={seats.right} selfId={view.selfId} />
 
-        <div className="playArea">
-          <div className="landlordMeta">
-            <div>
-              <h2>底牌</h2>
-              <div className="cards compact">
-                {view.bottomCards.length ? view.bottomCards.map((card) => <LandlordCardFace card={card} key={card.id} />) : <span className="muted">未揭示</span>}
-              </div>
-            </div>
-            <div>
-              <h2>上一手</h2>
-              <div className="cards compact">
-                {view.lastPlay ? (
-                  <>
-                    {view.lastPlay.cards.map((card) => <LandlordCardFace card={card} key={card.id} />)}
-                    <span className="playTag">{view.lastPlay.playerName}</span>
-                  </>
-                ) : (
-                  <span className="muted">新一轮</span>
-                )}
-              </div>
+        <div className="landlordTable">
+          <div className="bottomCards">
+            <span>底牌</span>
+            <div className="miniCards">
+              {view.bottomCards.length ? view.bottomCards.map((card) => <LandlordCardFace card={card} compact key={card.id} />) : <span className="muted">未揭示</span>}
             </div>
           </div>
-
-          <section className="hand">
-            <div className="handHeader">
-              <h2>手牌</h2>
-              <div className="actions">
-                {canStart && <button onClick={() => socket.emit("game:start", handleActionResult)}>开始游戏</button>}
-                {isBidTurn && view.bid?.mode === "call" && (
-                  <>
-                    <button onClick={() => bid("call", handleActionResult)}>叫地主</button>
-                    <button className="secondary" onClick={() => bid("noCall", handleActionResult)}>不叫</button>
-                  </>
-                )}
-                {isBidTurn && view.bid?.mode === "grab" && (
-                  <>
-                    <button onClick={() => bid("grab", handleActionResult)}>抢地主</button>
-                    <button className="secondary" onClick={() => bid("noGrab", handleActionResult)}>不抢</button>
-                  </>
-                )}
-                {view.phase === "playing" && isMyTurn && (
-                  <>
-                    <button disabled={!selected.length} onClick={() => socket.emit("landlord:play", selected, handleActionResult)}>出牌</button>
-                    <button className="secondary" disabled={!canPass} onClick={() => socket.emit("landlord:pass", handleActionResult)}>不出</button>
-                  </>
-                )}
-              </div>
-            </div>
-            <div className="cards landlordHand">
-              {view.hand.map((card) => (
-                <button className={selected.includes(card.id) ? "cardButton selected" : "cardButton"} key={card.id} onClick={() => toggle(selected, setSelected, card.id)}>
-                  <LandlordCardFace card={card} />
-                </button>
-              ))}
-            </div>
-            {selectedCards.length > 0 && <p className="hint">已选 {selectedCards.map(landlordCardName).join("、")}</p>}
-            {error && <p className="error">{error}</p>}
-          </section>
+          <TurnStateBox className="turnLeft" player={seats.left} view={view} />
+          <TurnStateBox className="turnRight" player={seats.right} view={view} />
+          <TurnStateBox className="turnSelf" player={seats.self} view={view} />
+          <div className="tableCenterStatus">{landlordCenterText(view)}</div>
         </div>
+      </section>
+
+      <section className="landlordHandPanel">
+        <div className="handHeader">
+          <h2>我的手牌 · {view.hand.length} 张</h2>
+          <div className="actions">
+            <span className="muted">真人 {humans} / {view.requiredHumans} · {modeLabel(view.playerMode)}</span>
+            {canStart && <button onClick={() => socket.emit("game:start", handleActionResult)}>开始游戏</button>}
+            {isBidTurn && view.bid?.mode === "call" && (
+              <>
+                <button onClick={() => bid("call", handleActionResult)}>叫地主</button>
+                <button className="secondary" onClick={() => bid("noCall", handleActionResult)}>不叫</button>
+              </>
+            )}
+            {isBidTurn && view.bid?.mode === "grab" && (
+              <>
+                <button onClick={() => bid("grab", handleActionResult)}>抢地主</button>
+                <button className="secondary" onClick={() => bid("noGrab", handleActionResult)}>不抢</button>
+              </>
+            )}
+            {view.phase === "playing" && isMyTurn && (
+              <>
+                <button disabled={!selected.length} onClick={() => socket.emit("landlord:play", selected, handleActionResult)}>出牌</button>
+                <button className="secondary" disabled={!canPass} onClick={() => socket.emit("landlord:pass", handleActionResult)}>不出</button>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="landlordHand" aria-label="我的手牌">
+          {view.hand.map((card) => (
+            <button className={selected.includes(card.id) ? "cardButton selected" : "cardButton"} key={card.id} onClick={() => toggle(selected, setSelected, card.id)}>
+              <LandlordCardFace card={card} />
+            </button>
+          ))}
+        </div>
+        {selectedCards.length > 0 && <p className="hint">已选 {selectedCards.map(landlordCardName).join("、")}</p>}
+        {error && <p className="error">{error}</p>}
       </section>
 
       <GameLog log={view.log} />
     </main>
+  );
+}
+
+function PlayerSeat({
+  player,
+  selfId,
+  className
+}: {
+  player?: { id: string; name: string; handCount: number; connected: boolean; seat: number; bot: boolean; role?: string };
+  selfId: string;
+  className: string;
+}) {
+  if (!player) return <div className={`landlordSeat ${className} emptySeat`}>等待玩家</div>;
+  return (
+    <div className={`landlordSeat ${className} ${player.id === selfId ? "self" : ""}`}>
+      <div className="avatarMark" aria-hidden="true" />
+      <strong>{player.name}{player.id === selfId ? "（你）" : ""}</strong>
+      <span>{player.bot ? "电脑" : player.connected ? "在线" : "离线"}{player.role ? ` · ${player.role === "landlord" ? "地主" : "农民"}` : ""}</span>
+      <b>{player.handCount}</b>
+    </div>
+  );
+}
+
+function TurnStateBox({
+  player,
+  view,
+  className
+}: {
+  player?: { id: string; name: string };
+  view: LandlordPlayerView;
+  className: string;
+}) {
+  if (!player) return null;
+  const state = view.turnStates.find((item) => item.playerId === player.id);
+  const isCurrent = view.currentPlayerId === player.id && view.phase !== "finished";
+  const label = turnStateLabel(state);
+  return (
+    <div className={`turnState ${className} ${isCurrent ? "current" : ""}`}>
+      <div className="turnStateHeader">
+        <span>{player.name}</span>
+        <strong>{label}</strong>
+      </div>
+      {state?.status === "played" && state.play ? (
+        <div className="turnCards">
+          {state.play.cards.map((card) => <LandlordCardFace card={card} compact key={card.id} />)}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -424,10 +459,10 @@ function CardFace({ card, large = false }: { card: Card; large?: boolean }) {
   );
 }
 
-function LandlordCardFace({ card }: { card: LandlordCard }) {
+function LandlordCardFace({ card, compact = false }: { card: LandlordCard; compact?: boolean }) {
   const red = card.suit === "diamonds" || card.suit === "hearts" || card.rank === "BJ";
   return (
-    <div className={`card landlordCard ${red ? "red" : "black"}`}>
+    <div className={`card landlordCard ${compact ? "compactCard" : ""} ${red ? "red" : "black"}`}>
       <span>{landlordRankLabel(card)}</span>
       <strong>{card.suit ? suitSymbol[card.suit] : "王"}</strong>
       <small>{card.value}</small>
@@ -453,6 +488,48 @@ function modeLabel(mode: LandlordPlayerMode): string {
   if (mode === "solo") return "单人";
   if (mode === "duo") return "双人";
   return "三人";
+}
+
+function landlordSeats(view: LandlordPlayerView) {
+  const sorted = view.players.slice().sort((a, b) => a.seat - b.seat);
+  const self = sorted.find((player) => player.id === view.selfId) ?? sorted[0];
+  const left = sorted[(self.seat + 1) % 3];
+  const right = sorted[(self.seat + 2) % 3];
+  return { self, left, right };
+}
+
+function turnStateLabel(state: LandlordPlayerView["turnStates"][number] | undefined): string {
+  if (!state || state.status === "waiting") return "等待";
+  if (state.status === "passed") return "不出";
+  return state.play ? landlordPlayTypeLabel(state.play.type) : "已出";
+}
+
+function landlordPlayTypeLabel(type: LandlordPlayType): string {
+  const labels: Record<LandlordPlayType, string> = {
+    single: "单张",
+    pair: "对子",
+    triple: "三张",
+    tripleSingle: "三带一",
+    triplePair: "三带二",
+    straight: "顺子",
+    pairSequence: "连对",
+    airplane: "飞机",
+    airplaneSingles: "飞机带单",
+    airplanePairs: "飞机带对",
+    fourTwoSingles: "四带二",
+    fourTwoPairs: "四带两对",
+    bomb: "炸弹",
+    rocket: "王炸"
+  };
+  return labels[type] ?? "已出";
+}
+
+function landlordCenterText(view: LandlordPlayerView): string {
+  if (view.phase === "lobby") return "等待开始";
+  if (view.phase === "bidding") return view.bid?.mode === "call" ? "叫地主" : "抢地主";
+  if (view.phase === "finished") return view.winner === "landlord" ? "地主胜利" : "农民胜利";
+  if (!view.lastPlay) return "新一轮";
+  return `${view.lastPlay.playerName} · ${landlordPlayTypeLabel(view.lastPlay.type)}`;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
