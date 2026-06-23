@@ -64,6 +64,26 @@ describe("landlord rules", () => {
     expect(room.players[room.landlordIndex!].hand).toHaveLength(20);
   });
 
+  it("starts the next round in the same room after a finished game", () => {
+    const room = createLandlordRoom("LLNEXT", "A", "p1", "solo");
+    startLandlordGame(room);
+    room.phase = "finished";
+    room.winner = "landlord";
+    room.players[0].hand = [];
+    room.players[1].hand = [c("3", "spades")];
+    room.players[2].hand = [c("4", "spades")];
+    room.lastPlay = analyzeLandlordCards([c("5", "spades")], room.players[0].id, room.players[0].name);
+
+    startLandlordGame(room);
+
+    expect(room.phase).toBe("bidding");
+    expect(room.winner).toBeUndefined();
+    expect(room.lastPlay).toBeUndefined();
+    expect(room.players).toHaveLength(3);
+    expect(room.players.every((player) => player.hand.length === 17)).toBe(true);
+    expect(room.bottomCards).toHaveLength(3);
+  });
+
   it("tracks bidding table states and lets the caller respond after another player grabs", () => {
     const room = createLandlordRoom("LLBID", "A", "p1", "solo");
     startLandlordGame(room);

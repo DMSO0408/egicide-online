@@ -163,6 +163,8 @@ function EgicideTable({
   const selectedCards = useMemo(() => view.hand.filter((card) => selected.includes(card.id)), [selected, view.hand]);
   const isMyTurn = view.currentPlayerId === view.selfId;
   const isDefending = view.defendingPlayerId === view.selfId;
+  const canStart = view.phase === "lobby" && view.players.length === 2;
+  const canRestart = (view.phase === "won" || view.phase === "lost") && view.players.length === 2;
 
   return (
     <main className="shell gameShell">
@@ -216,7 +218,8 @@ function EgicideTable({
         <div className="handHeader">
           <h2>手牌</h2>
           <div className="actions">
-            {view.phase === "lobby" && view.players.length === 2 && <button onClick={() => socket.emit("game:start", handleActionResult)}>开始游戏</button>}
+            {canStart && <button onClick={() => socket.emit("game:start", handleActionResult)}>开始游戏</button>}
+            {canRestart && <button onClick={() => socket.emit("game:start", handleActionResult)}>下一局</button>}
             {view.phase === "playerAction" && isMyTurn && (
               <>
                 <button disabled={!selected.length} onClick={() => socket.emit("action:playCards", selected, handleActionResult)}>出牌</button>
@@ -262,6 +265,7 @@ function LandlordTable({
   const isBidTurn = view.phase === "bidding" && view.bid?.currentPlayerId === view.selfId;
   const humans = view.players.filter((player) => !player.bot).length;
   const canStart = view.phase === "lobby" && humans >= view.requiredHumans;
+  const canRestart = view.phase === "finished" && humans >= view.requiredHumans;
   const canPass = isMyTurn && Boolean(view.lastPlay && view.lastPlay.playerId !== view.selfId);
   const canPlayAnyLandlordMove = useMemo(() => hasPlayableLandlordMove(view.hand, view.lastPlay, view.selfId), [view.hand, view.lastPlay, view.selfId]);
   const mustPass = view.phase === "playing" && isMyTurn && canPass && !canPlayAnyLandlordMove;
@@ -314,6 +318,7 @@ function LandlordTable({
           <div className="actions">
             <span className="muted">当前：{landlordPhaseText(view)}</span>
             {canStart && <button onClick={() => socket.emit("game:start", handleActionResult)}>开始游戏</button>}
+            {canRestart && <button onClick={() => socket.emit("game:start", handleActionResult)}>下一局</button>}
             {isBidTurn && view.bid?.mode === "call" && (
               <>
                 <button onClick={() => bid("call", handleActionResult)}>叫地主</button>

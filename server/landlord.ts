@@ -141,7 +141,7 @@ export function markLandlordDisconnected(room: LandlordRoom, playerId: string): 
 }
 
 export function startLandlordGame(room: LandlordRoom): void {
-  if (room.phase !== "lobby") throw new Error("游戏已经开始。");
+  if (room.phase !== "lobby" && room.phase !== "finished") throw new Error("游戏已经开始。");
   if (humanCount(room) < room.requiredHumans) throw new Error(`需要 ${room.requiredHumans} 名真人玩家才能开始。`);
   fillBots(room);
   dealForBidding(room, "游戏开始，开始叫地主。");

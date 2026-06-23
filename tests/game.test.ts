@@ -13,6 +13,31 @@ describe("game rules", () => {
     expect(getPlayerView(room, "p1").hand).toHaveLength(7);
   });
 
+  it("restarts in the same room after a win or loss", () => {
+    const room = createReadyRoom();
+    startGame(room);
+    room.phase = "lost";
+    room.players[0].hand = [];
+    room.players[1].hand = [];
+    room.tableCards = [card("old", "spades", "3", 3)];
+    room.defendingPlayerIndex = 1;
+
+    startGame(room);
+
+    expect(room.phase).toBe("playerAction");
+    expect(room.players[0].hand).toHaveLength(7);
+    expect(room.players[1].hand).toHaveLength(7);
+    expect(room.tableCards).toHaveLength(0);
+    expect(room.defendingPlayerIndex).toBeUndefined();
+
+    room.phase = "won";
+    room.players[0].hand = [];
+    startGame(room);
+
+    expect(room.phase).toBe("playerAction");
+    expect(room.players[0].hand).toHaveLength(7);
+  });
+
   it("rejects invalid card combinations", () => {
     const room = createReadyRoom();
     startGame(room);

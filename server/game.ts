@@ -90,7 +90,7 @@ export function markDisconnected(room: GameRoom, playerId: string): void {
 }
 
 export function startGame(room: GameRoom): void {
-  if (room.phase !== "lobby") throw new Error("游戏已经开始。");
+  if (room.phase !== "lobby" && room.phase !== "won" && room.phase !== "lost") throw new Error("游戏已经开始。");
   if (room.players.length !== 2) throw new Error("需要两名玩家才能开始。");
 
   const allCards = buildDeck();
@@ -100,6 +100,7 @@ export function startGame(room: GameRoom): void {
   room.monsterPile = [...jacks, ...queens, ...kings];
   room.drawPile = shuffle(allCards.filter((card) => !["J", "Q", "K"].includes(card.rank)));
   room.discardPile = [];
+  room.defendingPlayerIndex = undefined;
   room.players.forEach((player) => {
     player.hand = drawCards(room, 7);
   });
