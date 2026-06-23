@@ -31,7 +31,6 @@ interface BidState {
   callPassCount: number;
   calledByIndex?: number;
   candidateIndex?: number;
-  grabQueue: number[];
   actions: LandlordBidStatus[];
 }
 
@@ -159,10 +158,8 @@ export function bidLandlord(room: LandlordRoom, playerId: string, action: Landlo
       room.bidState.calledByIndex = room.bidState.currentIndex;
       room.bidState.candidateIndex = room.bidState.currentIndex;
       room.bidState.mode = "grab";
-      room.bidState.grabQueue = nextIndexes(room.bidState.currentIndex, 2);
-      room.bidState.currentIndex = room.bidState.grabQueue.shift() ?? room.bidState.currentIndex;
-      room.currentPlayerIndex = room.bidState.currentIndex;
       room.log.unshift(`${bidder.name} 叫地主。`);
+      advanceGrabTurnOrAssign(room, room.bidState.currentIndex);
       return;
     }
     if (action !== "noCall") throw new Error("当前只能叫地主或不叫。");
@@ -173,7 +170,7 @@ export function bidLandlord(room: LandlordRoom, playerId: string, action: Landlo
       dealForBidding(room, "无人叫地主，重新发牌。");
       return;
     }
-    room.bidState.currentIndex = (room.bidState.currentIndex + 1) % 3;
+    room.bidState.currentIndex = nextBidIndex(room.bidState.currentIndex);
     room.currentPlayerIndex = room.bidState.currentIndex;
     return;
   }
@@ -189,13 +186,7 @@ export function bidLandlord(room: LandlordRoom, playerId: string, action: Landlo
     throw new Error("当前只能抢地主或不抢。");
   }
 
-  const next = room.bidState.grabQueue.shift();
-  if (next === undefined) {
-    assignLandlord(room, room.bidState.candidateIndex ?? room.bidState.calledByIndex ?? room.bidState.currentIndex);
-  } else {
-    room.bidState.currentIndex = next;
-    room.currentPlayerIndex = next;
-  }
+  advanceGrabTurnOrAssign(room, room.bidState.currentIndex);
 }
 
 export function playLandlordCards(room: LandlordRoom, playerId: string, cardIds: string[]): void {
@@ -423,10 +414,42 @@ function dealForBidding(room: LandlordRoom, message: string): void {
     currentIndex: starterIndex,
     starterIndex,
     callPassCount: 0,
-    grabQueue: [],
     actions: []
   };
   room.log.unshift(message);
+}
+
+function advanceGrabTurnOrAssign(room: LandlordRoom, afterIndex: number): void {
+  if (!room.bidState || room.bidState.mode !== "grab") return;
+  const next = nextGrabIndex(room, afterIndex);
+  if (next === undefined) {
+    assignLandlord(room, room.bidState.candidateIndex ?? room.bidState.calledByIndex ?? afterIndex);
+    return;
+  }
+  room.bidState.currentIndex = next;
+  room.currentPlayerIndex = next;
+}
+
+function nextGrabIndex(room: LandlordRoom, afterIndex: number): number | undefined {
+  for (let offset = 1; offset <= 3; offset += 1) {
+    const index = (afterIndex + offset) % 3;
+    if (canBidderGrab(room, index)) return index;
+  }
+  return undefined;
+}
+
+function canBidderGrab(room: LandlordRoom, playerIndex: number): boolean {
+  const bidState = room.bidState;
+  const playerId = room.players[playerIndex]?.id;
+  if (!bidState || !playerId) return false;
+  const calledByIndex = bidState.calledByIndex;
+  if (calledByIndex === undefined) return false;
+  const action = bidState.actions.find((item) => item.playerId === playerId);
+  if (action?.action === "noCall") return false;
+  if (action?.action === "grab" || action?.action === "noGrab") return false;
+  if (playerIndex !== calledByIndex) return true;
+  const calledPlayerId = room.players[calledByIndex]?.id;
+  return bidState.actions.some((item) => item.playerId !== calledPlayerId && item.action === "grab");
 }
 
 function recordBidAction(bidState: BidState, playerId: string, action: LandlordBidAction): void {
@@ -951,8 +974,8 @@ function nextIndex(index: number): number {
   return (index + 2) % 3;
 }
 
-function nextIndexes(start: number, count: number): number[] {
-  return Array.from({ length: count }, (_, offset) => (start + offset + 1) % 3);
+function nextBidIndex(index: number): number {
+  return (index + 1) % 3;
 }
 
 function currentPlayer(room: LandlordRoom): LandlordPlayerState {

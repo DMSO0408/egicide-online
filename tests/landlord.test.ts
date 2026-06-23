@@ -64,7 +64,7 @@ describe("landlord rules", () => {
     expect(room.players[room.landlordIndex!].hand).toHaveLength(20);
   });
 
-  it("tracks bidding table states and assigns the last caller or grabber as landlord", () => {
+  it("tracks bidding table states and lets the caller respond after another player grabs", () => {
     const room = createLandlordRoom("LLBID", "A", "p1", "solo");
     startLandlordGame(room);
 
@@ -81,8 +81,62 @@ describe("landlord rules", () => {
     const passer = room.players[room.currentPlayerIndex];
     bidLandlord(room, passer.id, "noGrab");
 
+    expect(room.phase).toBe("bidding");
+    expect(room.currentPlayerIndex).toBe(caller.seat);
+
+    bidLandlord(room, caller.id, "noGrab");
+
     expect(room.phase).toBe("playing");
     expect(room.landlordIndex).toBe(grabber.seat);
+  });
+
+  it("lets the caller grab back after another player grabs", () => {
+    const room = createLandlordRoom("LLBACK", "A", "p1", "solo");
+    startLandlordGame(room);
+
+    const caller = room.players[room.currentPlayerIndex];
+    bidLandlord(room, caller.id, "call");
+    const grabber = room.players[room.currentPlayerIndex];
+    bidLandlord(room, grabber.id, "grab");
+    const passer = room.players[room.currentPlayerIndex];
+    bidLandlord(room, passer.id, "noGrab");
+    bidLandlord(room, caller.id, "grab");
+
+    expect(room.phase).toBe("playing");
+    expect(room.landlordIndex).toBe(caller.seat);
+  });
+
+  it("skips players who said no call during the grab phase", () => {
+    const room = createLandlordRoom("LLSKIP", "A", "p1", "solo");
+    startLandlordGame(room);
+
+    const skipped = room.players[room.currentPlayerIndex];
+    bidLandlord(room, skipped.id, "noCall");
+    const caller = room.players[room.currentPlayerIndex];
+    bidLandlord(room, caller.id, "call");
+    const eligible = room.players.find((player) => player.id !== skipped.id && player.id !== caller.id)!;
+
+    expect(room.phase).toBe("bidding");
+    expect(room.currentPlayerIndex).toBe(eligible.seat);
+
+    bidLandlord(room, eligible.id, "noGrab");
+
+    expect(room.phase).toBe("playing");
+    expect(room.landlordIndex).toBe(caller.seat);
+  });
+
+  it("redeals and clears bidding states when nobody calls landlord", () => {
+    const room = createLandlordRoom("LLNONE", "A", "p1", "solo");
+    startLandlordGame(room);
+
+    for (let i = 0; i < 3; i += 1) {
+      bidLandlord(room, room.players[room.currentPlayerIndex].id, "noCall");
+    }
+
+    expect(room.phase).toBe("bidding");
+    expect(room.bidState?.mode).toBe("call");
+    expect(room.bidState?.actions).toEqual([]);
+    expect(room.players.every((player) => player.hand.length === 17)).toBe(true);
   });
 
   it("allows a landlord to play a legal hand", () => {
