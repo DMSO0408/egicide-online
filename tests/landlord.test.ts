@@ -7,6 +7,8 @@ import {
   canBeat,
   chooseLandlordBotCards,
   createLandlordRoom,
+  getLandlordPlayerView,
+  passLandlord,
   playLandlordCards,
   startLandlordGame
 } from "../server/landlord";
@@ -62,6 +64,27 @@ describe("landlord rules", () => {
     expect(room.players[room.landlordIndex!].hand).toHaveLength(20);
   });
 
+  it("tracks bidding table states and assigns the last caller or grabber as landlord", () => {
+    const room = createLandlordRoom("LLBID", "A", "p1", "solo");
+    startLandlordGame(room);
+
+    const caller = room.players[room.currentPlayerIndex];
+    bidLandlord(room, caller.id, "call");
+    let view = getLandlordPlayerView(room, caller.id);
+    expect(view.bid?.states).toContainEqual({ playerId: caller.id, action: "call" });
+
+    const grabber = room.players[room.currentPlayerIndex];
+    bidLandlord(room, grabber.id, "grab");
+    view = getLandlordPlayerView(room, caller.id);
+    expect(view.bid?.states).toContainEqual({ playerId: grabber.id, action: "grab" });
+
+    const passer = room.players[room.currentPlayerIndex];
+    bidLandlord(room, passer.id, "noGrab");
+
+    expect(room.phase).toBe("playing");
+    expect(room.landlordIndex).toBe(grabber.seat);
+  });
+
   it("allows a landlord to play a legal hand", () => {
     const room = createLandlordRoom("LL002", "A", "p1", "solo");
     startLandlordGame(room);
@@ -77,6 +100,30 @@ describe("landlord rules", () => {
     expect(room.phase).toBe("playing");
     expect(room.lastPlay?.type).toBe("single");
     expect(landlord.hand).not.toContain(firstCard);
+  });
+
+  it("plays counter-clockwise during the landlord play phase", () => {
+    const room = createLandlordRoom("LLDIR", "A", "p1", "solo");
+    startLandlordGame(room);
+    room.phase = "playing";
+    room.landlordIndex = 0;
+    room.players[0].role = "landlord";
+    room.players[1].role = "farmer";
+    room.players[2].role = "farmer";
+    room.players[0].hand = [c("3", "spades"), c("10", "spades")];
+    room.players[1].hand = [c("4", "spades")];
+    room.players[2].hand = [c("5", "spades")];
+    room.currentPlayerIndex = 0;
+
+    playLandlordCards(room, room.players[0].id, [room.players[0].hand[0].id]);
+    expect(room.currentPlayerIndex).toBe(2);
+
+    passLandlord(room, room.players[2].id);
+    expect(room.currentPlayerIndex).toBe(1);
+
+    passLandlord(room, room.players[1].id);
+    expect(room.currentPlayerIndex).toBe(0);
+    expect(room.lastPlay).toBeUndefined();
   });
 
   it("bot leads with a compact straight instead of the lowest single", () => {

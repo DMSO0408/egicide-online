@@ -221,18 +221,31 @@ h2 {
 }
 
 .landlordCard {
-  width: 50px;
-  height: 72px;
+  width: 60px;
+  height: 86px;
 }
 
 .landlordCard.compactCard {
-  width: 36px;
-  height: 52px;
+  width: 42px;
+  height: 60px;
   padding: 4px;
 }
 
-.landlordCard.compactCard strong {
+.landlordCard span {
   font-size: 18px;
+  font-weight: 700;
+}
+
+.landlordCard strong {
+  font-size: 32px;
+}
+
+.landlordCard.compactCard span {
+  font-size: 14px;
+}
+
+.landlordCard.compactCard strong {
+  font-size: 21px;
 }
 
 .landlordTable {
@@ -385,7 +398,7 @@ h2 {
   display: flex;
   flex-wrap: nowrap;
   align-items: flex-end;
-  min-height: 92px;
+  min-height: 110px;
   overflow-x: auto;
   overflow-y: visible;
   padding: 8px 12px 12px;
@@ -393,7 +406,7 @@ h2 {
 
 .landlordHand .cardButton {
   flex: 0 0 auto;
-  margin-left: -18px;
+  margin-left: -22px;
   position: relative;
 }
 

@@ -1,5 +1,6 @@
 import type {
   LandlordBidAction,
+  LandlordBidStatus,
   LandlordCard,
   LandlordPhase,
   LandlordPlay,
@@ -31,6 +32,7 @@ interface BidState {
   calledByIndex?: number;
   candidateIndex?: number;
   grabQueue: number[];
+  actions: LandlordBidStatus[];
 }
 
 interface BotCandidate {
@@ -153,6 +155,7 @@ export function bidLandlord(room: LandlordRoom, playerId: string, action: Landlo
 
   if (room.bidState.mode === "call") {
     if (action === "call") {
+      recordBidAction(room.bidState, bidder.id, action);
       room.bidState.calledByIndex = room.bidState.currentIndex;
       room.bidState.candidateIndex = room.bidState.currentIndex;
       room.bidState.mode = "grab";
@@ -163,6 +166,7 @@ export function bidLandlord(room: LandlordRoom, playerId: string, action: Landlo
       return;
     }
     if (action !== "noCall") throw new Error("当前只能叫地主或不叫。");
+    recordBidAction(room.bidState, bidder.id, action);
     room.bidState.callPassCount += 1;
     room.log.unshift(`${bidder.name} 不叫。`);
     if (room.bidState.callPassCount >= 3) {
@@ -175,9 +179,11 @@ export function bidLandlord(room: LandlordRoom, playerId: string, action: Landlo
   }
 
   if (action === "grab") {
+    recordBidAction(room.bidState, bidder.id, action);
     room.bidState.candidateIndex = room.bidState.currentIndex;
     room.log.unshift(`${bidder.name} 抢地主。`);
   } else if (action === "noGrab") {
+    recordBidAction(room.bidState, bidder.id, action);
     room.log.unshift(`${bidder.name} 不抢。`);
   } else {
     throw new Error("当前只能抢地主或不抢。");
@@ -268,7 +274,8 @@ export function getLandlordPlayerView(room: LandlordRoom, playerId: string): Lan
           currentPlayerId: room.players[room.bidState.currentIndex]?.id,
           calledById: room.bidState.calledByIndex === undefined ? undefined : room.players[room.bidState.calledByIndex]?.id,
           candidateId: room.bidState.candidateIndex === undefined ? undefined : room.players[room.bidState.candidateIndex]?.id,
-          mode: room.bidState.mode
+          mode: room.bidState.mode,
+          states: [...room.bidState.actions]
         }
       : undefined,
     log: room.log.slice(0, 40),
@@ -416,9 +423,15 @@ function dealForBidding(room: LandlordRoom, message: string): void {
     currentIndex: starterIndex,
     starterIndex,
     callPassCount: 0,
-    grabQueue: []
+    grabQueue: [],
+    actions: []
   };
   room.log.unshift(message);
+}
+
+function recordBidAction(bidState: BidState, playerId: string, action: LandlordBidAction): void {
+  bidState.actions = bidState.actions.filter((item) => item.playerId !== playerId);
+  bidState.actions.push({ playerId, action });
 }
 
 function assignLandlord(room: LandlordRoom, landlordIndex: number): void {
@@ -935,7 +948,7 @@ function lowestCard(hand: LandlordCard[]): LandlordCard {
 }
 
 function nextIndex(index: number): number {
-  return (index + 1) % 3;
+  return (index + 2) % 3;
 }
 
 function nextIndexes(start: number, count: number): number[] {

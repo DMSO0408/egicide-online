@@ -99,11 +99,17 @@ export interface LandlordTurnState {
   play?: LandlordPlay;
 }
 
+export interface LandlordBidStatus {
+  playerId: string;
+  action: LandlordBidAction;
+}
+
 export interface LandlordBidView {
   currentPlayerId?: string;
   calledById?: string;
   candidateId?: string;
   mode: "call" | "grab";
+  states: LandlordBidStatus[];
 }
 
 export interface LandlordPlayerView {

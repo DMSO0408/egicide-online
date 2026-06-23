@@ -9,7 +9,9 @@ import type {
   GameType,
   JoinResult,
   LandlordBidAction,
+  LandlordBidStatus,
   LandlordCard,
+  LandlordPlay,
   LandlordPlayType,
   LandlordPlayerMode,
   LandlordPlayerView,
@@ -251,6 +253,8 @@ function LandlordTable({
   const humans = view.players.filter((player) => !player.bot).length;
   const canStart = view.phase === "lobby" && humans >= view.requiredHumans;
   const canPass = isMyTurn && Boolean(view.lastPlay && view.lastPlay.playerId !== view.selfId);
+  const canPlayAnyLandlordMove = useMemo(() => hasPlayableLandlordMove(view.hand, view.lastPlay, view.selfId), [view.hand, view.lastPlay, view.selfId]);
+  const mustPass = view.phase === "playing" && isMyTurn && canPass && !canPlayAnyLandlordMove;
   const seats = landlordSeats(view);
 
   return (
@@ -299,10 +303,11 @@ function LandlordTable({
                 <button className="secondary" onClick={() => bid("noGrab", handleActionResult)}>不抢</button>
               </>
             )}
-            {view.phase === "playing" && isMyTurn && (
+            {view.phase === "playing" && isMyTurn && mustPass && <button className="secondary" onClick={() => socket.emit("landlord:pass", handleActionResult)}>不出</button>}
+            {view.phase === "playing" && isMyTurn && !mustPass && (
               <>
                 <button disabled={!selected.length} onClick={() => socket.emit("landlord:play", selected, handleActionResult)}>出牌</button>
-                <button className="secondary" disabled={!canPass} onClick={() => socket.emit("landlord:pass", handleActionResult)}>不出</button>
+                {canPass && <button className="secondary" onClick={() => socket.emit("landlord:pass", handleActionResult)}>不出</button>}
               </>
             )}
           </div>
@@ -355,7 +360,8 @@ function TurnStateBox({
   if (!player) return null;
   const state = view.turnStates.find((item) => item.playerId === player.id);
   const isCurrent = view.currentPlayerId === player.id && view.phase !== "finished";
-  const label = turnStateLabel(state);
+  const bidState = view.bid?.states.find((item) => item.playerId === player.id);
+  const label = view.phase === "bidding" ? bidStateLabel(bidState, isCurrent, view.bid?.mode) : turnStateLabel(state);
   return (
     <div className={`turnState ${className} ${isCurrent ? "current" : ""}`}>
       <div className="turnStateHeader">
@@ -530,6 +536,130 @@ function landlordCenterText(view: LandlordPlayerView): string {
   if (view.phase === "finished") return view.winner === "landlord" ? "地主胜利" : "农民胜利";
   if (!view.lastPlay) return "新一轮";
   return `${view.lastPlay.playerName} · ${landlordPlayTypeLabel(view.lastPlay.type)}`;
+}
+
+function bidStateLabel(state: LandlordBidStatus | undefined, isCurrent: boolean, mode?: "call" | "grab"): string {
+  if (state?.action === "call") return "叫地主";
+  if (state?.action === "noCall") return "不叫";
+  if (state?.action === "grab") return "抢地主";
+  if (state?.action === "noGrab") return "不抢";
+  if (isCurrent) return mode === "grab" ? "待抢地主" : "待叫地主";
+  return "等待叫牌";
+}
+
+function hasPlayableLandlordMove(hand: LandlordCard[], lastPlay: LandlordPlay | undefined, selfId: string): boolean {
+  if (!lastPlay || lastPlay.playerId === selfId) return hand.length > 0;
+  if (lastPlay.type === "rocket") return false;
+  const groups = groupLandlordCards(hand);
+  if (rocketCards(hand)) return true;
+  if (lastPlay.type !== "bomb" && firstGroupOver(groups, 4, 0)) return true;
+  if (lastPlay.type === "bomb") return Boolean(firstGroupOver(groups, 4, lastPlay.value));
+
+  if (lastPlay.type === "single") return hand.some((card) => card.value > lastPlay.value);
+  if (lastPlay.type === "pair") return Boolean(firstGroupOver(groups, 2, lastPlay.value));
+  if (lastPlay.type === "triple") return Boolean(firstGroupOver(groups, 3, lastPlay.value));
+  if (lastPlay.type === "tripleSingle") return tripleWithSingles(groups, hand, lastPlay.value, 1);
+  if (lastPlay.type === "triplePair") return tripleWithPairs(groups, lastPlay.value, 1);
+  if (lastPlay.type === "straight") return Boolean(findLandlordSequence(groups, 1, lastPlay.length, lastPlay.value));
+  if (lastPlay.type === "pairSequence") return Boolean(findLandlordSequence(groups, 2, lastPlay.length, lastPlay.value));
+  if (lastPlay.type === "airplane") return Boolean(findLandlordSequence(groups, 3, lastPlay.length, lastPlay.value));
+  if (lastPlay.type === "airplaneSingles") return airplaneWithSingles(groups, hand, lastPlay.length, lastPlay.value);
+  if (lastPlay.type === "airplanePairs") return airplaneWithPairs(groups, lastPlay.length, lastPlay.value);
+  if (lastPlay.type === "fourTwoSingles") return fourWithSingles(groups, hand, lastPlay.value);
+  if (lastPlay.type === "fourTwoPairs") return fourWithPairs(groups, lastPlay.value);
+  return false;
+}
+
+function groupLandlordCards(cards: LandlordCard[]): Map<number, LandlordCard[]> {
+  const groups = new Map<number, LandlordCard[]>();
+  for (const card of [...cards].sort((a, b) => a.value - b.value)) {
+    const group = groups.get(card.value) ?? [];
+    group.push(card);
+    groups.set(card.value, group);
+  }
+  return groups;
+}
+
+function firstGroupOver(groups: Map<number, LandlordCard[]>, count: number, minValue: number, excluded: number[] = []): LandlordCard[] | undefined {
+  return [...groups.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .find(([value, cards]) => value > minValue && !excluded.includes(value) && cards.length >= count)?.[1]
+    ?.slice(0, count);
+}
+
+function rocketCards(hand: LandlordCard[]): boolean {
+  return hand.some((card) => card.rank === "SJ") && hand.some((card) => card.rank === "BJ");
+}
+
+function tripleWithSingles(groups: Map<number, LandlordCard[]>, hand: LandlordCard[], minValue: number, count: number): boolean {
+  for (const [value, cards] of [...groups.entries()].sort((a, b) => a[0] - b[0])) {
+    if (value <= minValue || cards.length < 3) continue;
+    if (hand.filter((card) => card.value !== value).length >= count) return true;
+  }
+  return false;
+}
+
+function tripleWithPairs(groups: Map<number, LandlordCard[]>, minValue: number, count: number): boolean {
+  for (const [value, cards] of [...groups.entries()].sort((a, b) => a[0] - b[0])) {
+    if (value <= minValue || cards.length < 3) continue;
+    if (countLandlordPairs(groups, [value]) >= count) return true;
+  }
+  return false;
+}
+
+function airplaneWithSingles(groups: Map<number, LandlordCard[]>, hand: LandlordCard[], length: number, minTopValue: number): boolean {
+  const triples = findLandlordSequence(groups, 3, length, minTopValue);
+  if (!triples) return false;
+  const excluded = uniqueLandlordValues(triples);
+  return hand.filter((card) => !excluded.includes(card.value)).length >= length;
+}
+
+function airplaneWithPairs(groups: Map<number, LandlordCard[]>, length: number, minTopValue: number): boolean {
+  const triples = findLandlordSequence(groups, 3, length, minTopValue);
+  if (!triples) return false;
+  return countLandlordPairs(groups, uniqueLandlordValues(triples)) >= length;
+}
+
+function fourWithSingles(groups: Map<number, LandlordCard[]>, hand: LandlordCard[], minValue: number): boolean {
+  for (const [value, cards] of [...groups.entries()].sort((a, b) => a[0] - b[0])) {
+    if (value > minValue && cards.length >= 4 && hand.filter((card) => card.value !== value).length >= 2) return true;
+  }
+  return false;
+}
+
+function fourWithPairs(groups: Map<number, LandlordCard[]>, minValue: number): boolean {
+  for (const [value, cards] of [...groups.entries()].sort((a, b) => a[0] - b[0])) {
+    if (value > minValue && cards.length >= 4 && countLandlordPairs(groups, [value]) >= 2) return true;
+  }
+  return false;
+}
+
+function countLandlordPairs(groups: Map<number, LandlordCard[]>, excluded: number[]): number {
+  return [...groups.entries()].filter(([value, cards]) => !excluded.includes(value) && cards.length >= 2).length;
+}
+
+function findLandlordSequence(groups: Map<number, LandlordCard[]>, count: number, length: number, minTopValue: number): LandlordCard[] | undefined {
+  const values = [...groups.entries()]
+    .filter(([value, cards]) => value <= 14 && cards.length >= count)
+    .map(([value]) => value)
+    .sort((a, b) => a - b);
+  for (let i = 0; i <= values.length - length; i += 1) {
+    const window = values.slice(i, i + length);
+    if (window.at(-1)! <= minTopValue || !isLandlordSequence(window)) continue;
+    return window.flatMap((value) => groups.get(value)!.slice(0, count));
+  }
+  return undefined;
+}
+
+function isLandlordSequence(values: number[]): boolean {
+  for (let i = 1; i < values.length; i += 1) {
+    if (values[i] !== values[i - 1] + 1) return false;
+  }
+  return true;
+}
+
+function uniqueLandlordValues(cards: LandlordCard[]): number[] {
+  return [...new Set(cards.map((card) => card.value))];
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
