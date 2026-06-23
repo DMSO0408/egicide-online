@@ -92,26 +92,31 @@ function App() {
     return (
       <main className="shell centered">
         <section className="entry">
-          <h1>Card Room</h1>
-          <label>
+          <div className="entryIntro">
+            <h1>Card Room</h1>
+            <p>选择游戏模式，开始一局纸牌对战</p>
+          </div>
+          <label className="entryLabel">
             昵称
             <input value={name} onChange={(event) => setName(event.target.value)} />
           </label>
-          <div className="gameChoices">
+          <div className="gameChoices segmented">
             <button className={gameType === "landlord" ? "choice active" : "choice"} onClick={() => setGameType("landlord")}>斗地主</button>
             <button className={gameType === "egicide" ? "choice active" : "choice"} onClick={() => setGameType("egicide")}>Egicide</button>
           </div>
           {gameType === "landlord" && (
-            <div className="gameChoices">
+            <div className="gameChoices segmented compactSegmented">
               <button className={playerMode === "solo" ? "choice active" : "choice"} onClick={() => setPlayerMode("solo")}>单人</button>
               <button className={playerMode === "duo" ? "choice active" : "choice"} onClick={() => setPlayerMode("duo")}>双人</button>
               <button className={playerMode === "trio" ? "choice active" : "choice"} onClick={() => setPlayerMode("trio")}>三人</button>
             </div>
           )}
           <div className="entryActions">
-            <button onClick={createSelectedRoom}>创建房间</button>
-            <input placeholder="房间码" value={roomCode} onChange={(event) => setRoomCode(event.target.value.toUpperCase())} />
-            <button onClick={joinRoom}>加入</button>
+            <button className="createButton" onClick={createSelectedRoom}>创建房间</button>
+            <div className="joinGroup">
+              <input placeholder="房间码" value={roomCode} onChange={(event) => setRoomCode(event.target.value.toUpperCase())} />
+              <button onClick={joinRoom}>加入</button>
+            </div>
           </div>
           {error && <p className="error">{error}</p>}
         </section>
@@ -160,13 +165,18 @@ function EgicideTable({
   const isDefending = view.defendingPlayerId === view.selfId;
 
   return (
-    <main className="shell">
+    <main className="shell gameShell">
       <header className="topbar">
         <div>
-          <strong>Egicide · {view.roomCode}</strong>
-          <span>{egicidePhaseText(view)}</span>
+          <strong>Egicide</strong>
+          <span>房间 {view.roomCode}</span>
         </div>
-        <button className="secondary" onClick={clearSession}>离开</button>
+        <div className="topbarMeta">
+          <span className="badge primaryBadge">{egicidePhaseText(view)}</span>
+          <span className="badge neutralBadge">队伍 {view.players.length}/2</span>
+          <span className="badge accentBadge">轮到：{currentPlayerName(view.players, view.currentPlayerId)}</span>
+          <button className="secondary" onClick={clearSession}>离开</button>
+        </div>
       </header>
 
       <section className="board">
@@ -258,38 +268,51 @@ function LandlordTable({
   const seats = landlordSeats(view);
 
   return (
-    <main className="shell landlordShell">
+    <main className="shell gameShell landlordShell">
       <header className="topbar">
         <div>
-          <strong>斗地主 · {view.roomCode}</strong>
-          <span>{landlordPhaseText(view)}</span>
+          <strong>斗地主</strong>
+          <span>房间 {view.roomCode}</span>
         </div>
-        <button className="secondary" onClick={clearSession}>离开</button>
+        <div className="topbarMeta">
+          <span className="badge primaryBadge">{landlordPhaseBadge(view)}</span>
+          <span className="badge neutralBadge">真人 {humans}/{view.requiredHumans} · {modeLabel(view.playerMode)}</span>
+          <span className="badge accentBadge">轮到：{currentLandlordPlayerName(view)}</span>
+          <button className="secondary" onClick={clearSession}>离开</button>
+        </div>
       </header>
 
       <section className="landlordBoard">
-        <PlayerSeat className="leftSeat" player={seats.left} selfId={view.selfId} />
-        <PlayerSeat className="rightSeat" player={seats.right} selfId={view.selfId} />
-
         <div className="landlordTable">
+          <div className="feltGlow" />
+          <PlayerSeat className="seatLeft" player={seats.left} selfId={view.selfId} view={view} />
+          <PlayerSeat className="seatRight" player={seats.right} selfId={view.selfId} view={view} />
+          <PlayerSeat className="seatSelf" player={seats.self} selfId={view.selfId} view={view} />
           <div className="bottomCards">
-            <span>底牌</span>
             <div className="miniCards">
-              {view.bottomCards.length ? view.bottomCards.map((card) => <LandlordCardFace card={card} compact key={card.id} />) : <span className="muted">未揭示</span>}
+              {view.bottomCards.length
+                ? view.bottomCards.map((card) => <LandlordCardFace card={card} compact key={card.id} />)
+                : Array.from({ length: 3 }, (_, index) => <div className="cardBack miniBack" key={index} />)}
+            </div>
+            <span className="badge neutralBadge">{view.bottomCards.length ? "底牌" : "底牌 · 未揭示"}</span>
+          </div>
+          <div className="tableCenterStatus">
+            <span className="badge tableBadge">{landlordCenterText(view)}</span>
+            <div className="turnCards centerCards">
+              {view.lastPlay?.cards.length ? view.lastPlay.cards.map((card) => <LandlordCardFace card={card} compact key={card.id} />) : <span className="tableEmptyText">{view.phase === "bidding" ? "等待叫地主" : "等待出牌"}</span>}
             </div>
           </div>
-          <TurnStateBox className="turnLeft" player={seats.left} view={view} />
-          <TurnStateBox className="turnRight" player={seats.right} view={view} />
-          <TurnStateBox className="turnSelf" player={seats.self} view={view} />
-          <div className="tableCenterStatus">{landlordCenterText(view)}</div>
         </div>
       </section>
 
       <section className="landlordHandPanel">
         <div className="handHeader">
-          <h2>我的手牌 · {view.hand.length} 张</h2>
+          <div>
+            <h2>我的手牌 · {view.hand.length} 张</h2>
+            <span className="badge neutralBadge">{selfRoleLabel(seats.self?.role)}</span>
+          </div>
           <div className="actions">
-            <span className="muted">真人 {humans} / {view.requiredHumans} · {modeLabel(view.playerMode)}</span>
+            <span className="muted">当前：{landlordPhaseText(view)}</span>
             {canStart && <button onClick={() => socket.emit("game:start", handleActionResult)}>开始游戏</button>}
             {isBidTurn && view.bid?.mode === "call" && (
               <>
@@ -331,19 +354,39 @@ function LandlordTable({
 function PlayerSeat({
   player,
   selfId,
-  className
+  className,
+  view
 }: {
   player?: { id: string; name: string; handCount: number; connected: boolean; seat: number; bot: boolean; role?: string };
   selfId: string;
   className: string;
+  view: LandlordPlayerView;
 }) {
   if (!player) return <div className={`landlordSeat ${className} emptySeat`}>等待玩家</div>;
+  const state = view.turnStates.find((item) => item.playerId === player.id);
+  const bidState = view.bid?.states.find((item) => item.playerId === player.id);
+  const isCurrent = view.currentPlayerId === player.id && view.phase !== "finished";
+  const isCandidate = view.phase === "bidding" && view.bid?.candidateId === player.id;
+  const status = view.phase === "bidding" ? bidStateLabel(bidState, isCurrent, view.bid?.mode) : turnStateLabel(state);
   return (
-    <div className={`landlordSeat ${className} ${player.id === selfId ? "self" : ""}`}>
-      <div className="avatarMark" aria-hidden="true" />
-      <strong>{player.name}{player.id === selfId ? "（你）" : ""}</strong>
-      <span>{player.bot ? "电脑" : player.connected ? "在线" : "离线"}{player.role ? ` · ${player.role === "landlord" ? "地主" : "农民"}` : ""}</span>
-      <b>{player.handCount}</b>
+    <div className={`landlordSeat ${className} ${player.id === selfId ? "self" : ""} ${isCurrent ? "current" : ""} ${isCandidate ? "candidate" : ""}`}>
+      <div className="seatMain">
+        <div className="avatarMark" aria-hidden="true">{player.name.slice(0, 1)}</div>
+        <div className="seatText">
+          <strong>{player.name}{player.id === selfId ? "（你）" : ""}</strong>
+          <span>{player.bot ? "电脑" : player.connected ? "在线" : "离线"}</span>
+        </div>
+        <b>{player.handCount}</b>
+      </div>
+      <div className="seatBadges">
+        <span className={`badge ${player.role === "landlord" || isCandidate ? "accentBadge" : "neutralBadge"}`}>{isCandidate ? "地主候选" : selfRoleLabel(player.role)}</span>
+        <span className={`badge ${isCurrent ? "primaryBadge" : "softBadge"}`}>{status}</span>
+      </div>
+      {state?.status === "played" && state.play ? (
+        <div className="turnCards seatCards">
+          {state.play.cards.map((card) => <LandlordCardFace card={card} compact key={card.id} />)}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -445,6 +488,27 @@ function landlordPhaseText(view: LandlordPlayerView): string {
   }
   if (view.phase === "finished") return view.winner === "landlord" ? "地主胜利" : "农民胜利";
   return view.currentPlayerId === view.selfId ? "轮到你出牌" : "等待出牌";
+}
+
+function landlordPhaseBadge(view: LandlordPlayerView): string {
+  if (view.phase === "lobby") return "等待开始";
+  if (view.phase === "bidding") return view.bid?.mode === "call" ? "叫地主阶段" : "抢地主阶段";
+  if (view.phase === "finished") return view.winner === "landlord" ? "地主胜利" : "农民胜利";
+  return "出牌阶段";
+}
+
+function currentPlayerName(players: Array<{ id: string; name: string }>, currentPlayerId?: string): string {
+  return players.find((player) => player.id === currentPlayerId)?.name ?? "等待";
+}
+
+function currentLandlordPlayerName(view: LandlordPlayerView): string {
+  return currentPlayerName(view.players, view.currentPlayerId);
+}
+
+function selfRoleLabel(role?: string): string {
+  if (role === "landlord") return "地主";
+  if (role === "farmer") return "农民";
+  return "待定";
 }
 
 const suitSymbol: Record<Suit, string> = {
