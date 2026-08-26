@@ -84,6 +84,22 @@ describe("landlord rules", () => {
     expect(room.bottomCards).toHaveLength(3);
   });
 
+  it("reveals every unfinished hand after the game ends", () => {
+    const room = createLandlordRoom("LLRESULT", "A", "p1", "solo");
+    startLandlordGame(room);
+    room.phase = "finished";
+    room.players[0].hand = [];
+    room.players[1].hand = [c("3", "spades"), c("4", "spades")];
+    room.players[2].hand = [c("A", "hearts")];
+
+    const view = getLandlordPlayerView(room, "p1");
+
+    expect(view.remainingHands).toEqual([
+      { playerId: room.players[1].id, playerName: room.players[1].name, cards: room.players[1].hand },
+      { playerId: room.players[2].id, playerName: room.players[2].name, cards: room.players[2].hand }
+    ]);
+  });
+
   it("tracks bidding table states and lets the caller respond after another player grabs", () => {
     const room = createLandlordRoom("LLBID", "A", "p1", "solo");
     startLandlordGame(room);
@@ -258,6 +274,25 @@ describe("landlord rules", () => {
     expect(choice).toEqual([]);
   });
 
+  it("farmer bot follows a teammate's small play with a low-cost J pair", () => {
+    const room = createLandlordRoom("LLAI2D", "A", "p1", "solo");
+    startLandlordGame(room);
+    const teammate = room.players[1];
+    const bot = room.players[2];
+    room.phase = "playing";
+    room.currentPlayerIndex = bot.seat;
+    room.landlordIndex = 0;
+    room.players[0].role = "landlord";
+    teammate.role = "farmer";
+    bot.role = "farmer";
+    bot.hand = [c("J", "spades"), c("J", "clubs"), c("Q", "spades"), c("K", "clubs"), c("A", "hearts")];
+    room.lastPlay = analyzeLandlordCards([c("8", "spades"), c("8", "clubs")], teammate.id, teammate.name);
+
+    const choice = chooseLandlordBotCards(room, bot.id);
+
+    expect(choice.map((card) => card.rank)).toEqual(["J", "J"]);
+  });
+
   it("farmer bot overtakes a teammate when a run gives it fast tempo", () => {
     const room = createLandlordRoom("LLAI2C", "A", "p1", "solo");
     startLandlordGame(room);
@@ -363,6 +398,25 @@ describe("landlord rules", () => {
 
     expect(play?.type).toBe("pair");
     expect(choice.map((card) => card.rank)).toEqual(["4", "4"]);
+  });
+
+  it("bot carries a stranded low single with a high triple in the endgame", () => {
+    const room = createLandlordRoom("LLAI3E", "A", "p1", "solo");
+    startLandlordGame(room);
+    const bot = room.players[0];
+    room.phase = "playing";
+    room.currentPlayerIndex = bot.seat;
+    room.landlordIndex = bot.seat;
+    bot.role = "landlord";
+    room.players[1].role = "farmer";
+    room.players[2].role = "farmer";
+    bot.hand = [c("3", "spades"), c("A", "spades"), c("A", "clubs"), c("A", "hearts"), c("2", "spades")];
+    room.lastPlay = undefined;
+
+    const choice = chooseLandlordBotCards(room, bot.id);
+
+    expect(analyzeLandlordCards(choice)?.type).toBe("tripleSingle");
+    expect(choice.map((card) => card.rank)).toEqual(["3", "A", "A", "A"]);
   });
 
   it("bot plays the whole hand when it can finish", () => {

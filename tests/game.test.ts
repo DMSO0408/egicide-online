@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Card } from "../shared/types";
-import { createRoom, getPlayerView, playCards, startGame } from "../server/game";
+import { createRoom, getPlayerView, playCards, requestOpenHands, respondOpenHands, startGame } from "../server/game";
 
 describe("game rules", () => {
   it("starts with two hidden hands and a jack monster", () => {
@@ -11,6 +11,36 @@ describe("game rules", () => {
     expect(room.players[1].hand).toHaveLength(7);
     expect(room.currentMonster?.rank).toBe("J");
     expect(getPlayerView(room, "p1").hand).toHaveLength(7);
+    expect(getPlayerView(room, "p1").teammateHand).toBeUndefined();
+  });
+
+  it("reveals both hands only after the teammate accepts the request", () => {
+    const room = createReadyRoom();
+    startGame(room);
+
+    requestOpenHands(room, "p1");
+    expect(getPlayerView(room, "p1").openHandsRequest).toEqual({ requesterId: "p1" });
+    expect(getPlayerView(room, "p2").teammateHand).toBeUndefined();
+
+    respondOpenHands(room, "p2", true);
+
+    const p1View = getPlayerView(room, "p1");
+    const p2View = getPlayerView(room, "p2");
+    expect(p1View.handsRevealed).toBe(true);
+    expect(p1View.teammateHand).toEqual(room.players[1].hand);
+    expect(p2View.teammateHand).toEqual(room.players[0].hand);
+  });
+
+  it("keeps hands hidden when the teammate declines an open-hands request", () => {
+    const room = createReadyRoom();
+    startGame(room);
+
+    requestOpenHands(room, "p1");
+    respondOpenHands(room, "p2", false);
+
+    expect(getPlayerView(room, "p1").handsRevealed).toBe(false);
+    expect(getPlayerView(room, "p1").teammateHand).toBeUndefined();
+    expect(getPlayerView(room, "p1").openHandsRequest).toBeUndefined();
   });
 
   it("restarts in the same room after a win or loss", () => {

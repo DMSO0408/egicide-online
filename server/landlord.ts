@@ -43,8 +43,8 @@ interface BotCandidate {
 interface HandPlan {
   turns: number;
   singles: number;
+  lowSingles: number;
   bombs: number;
-  highCards: number;
 }
 
 export interface LandlordRoom {
@@ -93,7 +93,6 @@ const rankValues: Record<LandlordRank, number> = {
 };
 
 const lowContestValue = rankValues["8"];
-const cheapTeammateFollowValue = rankValues["10"];
 const farmerDangerForLandlord = 7;
 const landlordDangerForFarmer = 3;
 
@@ -270,7 +269,13 @@ export function getLandlordPlayerView(room: LandlordRoom, playerId: string): Lan
         }
       : undefined,
     log: room.log.slice(0, 40),
-    winner: room.winner
+    winner: room.winner,
+    remainingHands:
+      room.phase === "finished"
+        ? room.players
+            .filter((player) => player.hand.length > 0)
+            .map((player) => ({ playerId: player.id, playerName: player.name, cards: [...player.hand] }))
+        : []
   };
 }
 
@@ -609,6 +614,7 @@ function addAirplanes(hand: LandlordCard[], groups: Map<number, LandlordCard[]>,
 }
 
 function scoreBotCandidate(room: LandlordRoom, bot: LandlordPlayerState, candidate: BotCandidate, target?: LandlordPlay): number {
+  const currentPlan = estimateHandPlan(bot.hand);
   const plan = estimateHandPlan(candidate.remaining);
   const targetPlayer = target ? room.players.find((player) => player.id === target.playerId) : undefined;
   const finishBonus = candidate.remaining.length === 0 ? 10000 : 0;
@@ -619,9 +625,10 @@ function scoreBotCandidate(room: LandlordRoom, bot: LandlordPlayerState, candida
   score += playShapeBonus(candidate.play);
   score -= candidate.play.value * (target ? 1.1 : 0.65);
   score -= plan.turns * 32;
-  score -= plan.singles * 7;
+  score -= plan.singles * 12;
+  score -= plan.lowSingles * 24;
+  score += (currentPlan.lowSingles - plan.lowSingles) * 34;
   score += plan.bombs * 5;
-  score += plan.highCards * 1.5;
 
   if (target && targetPlayer) {
     if (isOpponent(bot, targetPlayer)) {
@@ -633,7 +640,7 @@ function scoreBotCandidate(room: LandlordRoom, bot: LandlordPlayerState, candida
     } else if (bot.role === "farmer" && targetPlayer.role === "farmer") {
       score -= 45;
       if (isSmallPlay(target) && !isBombLike(candidate.play)) {
-        score += candidate.play.value <= cheapTeammateFollowValue ? 130 : 45;
+        score += isLowCostTeammateFollow(bot, candidate) ? 130 : 45;
       }
       if (fastTempo) score += 145;
       if (!fastTempo && target.value >= rankValues.Q) score -= 85;
@@ -651,7 +658,7 @@ function scoreBotCandidate(room: LandlordRoom, bot: LandlordPlayerState, candida
     score -= bombPenalty(room, bot, targetPlayer, candidate);
   }
   if (isEndgame(room, bot)) {
-    score += endgameBonus(room, bot, candidate, targetPlayer);
+    score += endgameBonus(room, bot, candidate, targetPlayer, currentPlan, plan);
   }
 
   return score;
@@ -662,7 +669,7 @@ function shouldYieldToTeammate(room: LandlordRoom, bot: LandlordPlayerState, tar
   if (!targetPlayer) return false;
   if (bot.role !== "farmer" || targetPlayer.role !== "farmer") return false;
   if (candidate.remaining.length === 0) return false;
-  if (isSmallPlay(target) && !isBombLike(candidate.play) && candidate.play.value <= cheapTeammateFollowValue) return false;
+  if (isSmallPlay(target) && isLowCostTeammateFollow(bot, candidate)) return false;
   if (isFastTempoCandidate(candidate)) return false;
   return true;
 }
@@ -680,8 +687,8 @@ function shouldDeclineCandidate(room: LandlordRoom, bot: LandlordPlayerState, ca
 function estimateHandPlan(hand: LandlordCard[]): HandPlan {
   const groups = groupCardsByValue(hand);
   const singles = [...groups.values()].filter((cards) => cards.length === 1).length;
+  const lowSingles = [...groups.values()].filter((cards) => cards.length === 1 && cards[0].value <= lowContestValue).length;
   const bombs = [...groups.values()].filter((cards) => cards.length === 4).length + (rocket(hand) ? 1 : 0);
-  const highCards = hand.filter((card) => card.value >= rankValues.A).length;
   let turns = 0;
   let remaining = [...hand];
   for (let i = 0; i < 24 && remaining.length > 0; i += 1) {
@@ -692,7 +699,14 @@ function estimateHandPlan(hand: LandlordCard[]): HandPlan {
     remaining = removeCards(remaining, best.cards);
   }
   turns += remaining.length;
-  return { turns, singles, bombs, highCards };
+  return { turns, singles, lowSingles, bombs };
+}
+
+function isLowCostTeammateFollow(bot: LandlordPlayerState, candidate: BotCandidate): boolean {
+  if (isBombLike(candidate.play) || candidate.play.value > rankValues.J) return false;
+  const before = estimateHandPlan(bot.hand);
+  const after = estimateHandPlan(candidate.remaining);
+  return after.lowSingles < before.lowSingles || candidate.cards.every((card) => card.value <= rankValues.J);
 }
 
 function generateLeadPlanCandidates(hand: LandlordCard[]): BotCandidate[] {
@@ -777,8 +791,18 @@ function bombPenalty(room: LandlordRoom, bot: LandlordPlayerState, targetPlayer:
   return candidate.play.type === "rocket" ? 320 : 260;
 }
 
-function endgameBonus(room: LandlordRoom, bot: LandlordPlayerState, candidate: BotCandidate, targetPlayer?: LandlordPlayerState): number {
+function endgameBonus(
+  room: LandlordRoom,
+  bot: LandlordPlayerState,
+  candidate: BotCandidate,
+  targetPlayer: LandlordPlayerState | undefined,
+  currentPlan: HandPlan,
+  plan: HandPlan
+): number {
   let score = 0;
+  score += (currentPlan.lowSingles - plan.lowSingles) * 62;
+  score -= plan.lowSingles * 38;
+  if (!targetPlayer && candidate.play.value >= rankValues.A && plan.lowSingles > 0 && !isBombLike(candidate.play)) score -= 80;
   if (candidate.remaining.length <= 2) score += 80;
   if (candidate.remaining.length === 1 && candidate.remaining[0].value >= rankValues.A) score += 35;
   if (targetPlayer && isDangerousEnemy(bot, targetPlayer)) score += 90;

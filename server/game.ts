@@ -21,6 +21,8 @@ export interface GameRoom {
   monsterDamage: number;
   shield: number;
   tableCards: Card[];
+  handsRevealed: boolean;
+  openHandsRequesterId?: string;
   log: string[];
 }
 
@@ -67,6 +69,7 @@ export function createRoom(code: string, hostName: string, hostId: string): Game
     monsterDamage: 0,
     shield: 0,
     tableCards: [],
+    handsRevealed: false,
     log: ["房间已创建，等待第二名玩家加入。"]
   };
 }
@@ -101,6 +104,8 @@ export function startGame(room: GameRoom): void {
   room.drawPile = shuffle(allCards.filter((card) => !["J", "Q", "K"].includes(card.rank)));
   room.discardPile = [];
   room.defendingPlayerIndex = undefined;
+  room.handsRevealed = false;
+  room.openHandsRequesterId = undefined;
   room.players.forEach((player) => {
     player.hand = drawCards(room, 7);
   });
@@ -108,6 +113,31 @@ export function startGame(room: GameRoom): void {
   room.phase = "playerAction";
   room.currentPlayerIndex = 0;
   room.log.unshift("游戏开始。");
+}
+
+export function requestOpenHands(room: GameRoom, playerId: string): void {
+  const requester = room.players.find((player) => player.id === playerId);
+  if (!requester) throw new Error("\u4f60\u4e0d\u5728\u5f53\u524d\u623f\u95f4\u4e2d\u3002");
+  if (room.players.length !== 2) throw new Error("\u9700\u8981\u4e24\u540d\u73a9\u5bb6\u624d\u80fd\u7533\u8bf7\u660e\u724c\u3002");
+  if (room.handsRevealed) throw new Error("\u5f53\u524d\u5df2\u660e\u724c\u3002");
+  if (room.openHandsRequesterId) throw new Error("\u5df2\u6709\u5f85\u5904\u7406\u7684\u660e\u724c\u8bf7\u6c42\u3002");
+
+  room.openHandsRequesterId = requester.id;
+  room.log.unshift(`${requester.name} \u7533\u8bf7\u660e\u724c\u3002`);
+}
+
+export function respondOpenHands(room: GameRoom, playerId: string, accepted: boolean): void {
+  const requesterId = room.openHandsRequesterId;
+  if (!requesterId) throw new Error("\u6ca1\u6709\u5f85\u5904\u7406\u7684\u660e\u724c\u8bf7\u6c42\u3002");
+  if (requesterId === playerId) throw new Error("\u8bf7\u7b49\u5f85\u961f\u53cb\u5904\u7406\u660e\u724c\u8bf7\u6c42\u3002");
+
+  const requester = room.players.find((player) => player.id === requesterId);
+  const responder = room.players.find((player) => player.id === playerId);
+  if (!requester || !responder) throw new Error("\u4f60\u4e0d\u5728\u5f53\u524d\u623f\u95f4\u4e2d\u3002");
+
+  room.openHandsRequesterId = undefined;
+  room.handsRevealed = accepted;
+  room.log.unshift(accepted ? `${responder.name} \u63a5\u53d7\u4e86 ${requester.name} \u7684\u660e\u724c\u8bf7\u6c42\u3002` : `${responder.name} \u62d2\u7edd\u4e86 ${requester.name} \u7684\u660e\u724c\u8bf7\u6c42\u3002`);
 }
 
 export function playCards(room: GameRoom, playerId: string, cardIds: string[]): void {
@@ -176,6 +206,7 @@ export function defend(room: GameRoom, playerId: string, cardIds: string[]): voi
 
 export function getPlayerView(room: GameRoom, playerId: string): PlayerView {
   const self = room.players.find((player) => player.id === playerId);
+  const teammate = room.players.find((player) => player.id !== playerId);
   return {
     gameType: "egicide",
     roomCode: room.code,
@@ -187,6 +218,9 @@ export function getPlayerView(room: GameRoom, playerId: string): PlayerView {
       connected: player.connected
     })),
     hand: self ? [...self.hand] : [],
+    handsRevealed: room.handsRevealed,
+    openHandsRequest: room.openHandsRequesterId ? { requesterId: room.openHandsRequesterId } : undefined,
+    teammateHand: room.handsRevealed ? [...(teammate?.hand ?? [])] : undefined,
     phase: room.phase,
     currentPlayerId: room.players[room.currentPlayerIndex]?.id,
     defendingPlayerId: room.defendingPlayerIndex === undefined ? undefined : room.players[room.defendingPlayerIndex]?.id,

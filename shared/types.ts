@@ -33,6 +33,9 @@ export interface PlayerView {
   selfId: string;
   players: PublicPlayer[];
   hand: Card[];
+  handsRevealed: boolean;
+  openHandsRequest?: { requesterId: string };
+  teammateHand?: Card[];
   phase: Phase;
   currentPlayerId?: string;
   defendingPlayerId?: string;
@@ -112,6 +115,12 @@ export interface LandlordBidView {
   states: LandlordBidStatus[];
 }
 
+export interface LandlordRemainingHand {
+  playerId: string;
+  playerName: string;
+  cards: LandlordCard[];
+}
+
 export interface LandlordPlayerView {
   gameType: "landlord";
   roomCode: string;
@@ -130,6 +139,7 @@ export interface LandlordPlayerView {
   bid?: LandlordBidView;
   log: string[];
   winner?: "landlord" | "farmers";
+  remainingHands: LandlordRemainingHand[];
   error?: string;
 }
 
@@ -148,6 +158,8 @@ export interface ClientToServerEvents {
   "action:playCards": (cardIds: string[], ack: (result: ActionResult) => void) => void;
   "action:skip": (ack: (result: ActionResult) => void) => void;
   "action:defend": (cardIds: string[], ack: (result: ActionResult) => void) => void;
+  "action:requestOpenHands": (ack: (result: ActionResult) => void) => void;
+  "action:respondOpenHands": (accepted: boolean, ack: (result: ActionResult) => void) => void;
   "landlord:bid": (action: LandlordBidAction, ack: (result: ActionResult) => void) => void;
   "landlord:play": (cardIds: string[], ack: (result: ActionResult) => void) => void;
   "landlord:pass": (ack: (result: ActionResult) => void) => void;

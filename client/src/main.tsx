@@ -165,6 +165,9 @@ function EgicideTable({
   const isDefending = view.defendingPlayerId === view.selfId;
   const canStart = view.phase === "lobby" && view.players.length === 2;
   const canRestart = (view.phase === "won" || view.phase === "lost") && view.players.length === 2;
+  const teammate = view.players.find((player) => player.id !== view.selfId);
+  const incomingOpenHandsRequest = view.openHandsRequest?.requesterId && view.openHandsRequest.requesterId !== view.selfId;
+  const waitingForOpenHands = view.openHandsRequest?.requesterId === view.selfId;
 
   return (
     <main className="shell gameShell">
@@ -180,6 +183,15 @@ function EgicideTable({
           <button className="secondary" onClick={clearSession}>离开</button>
         </div>
       </header>
+
+      <section className="openHandsControl">
+        {view.handsRevealed ? (
+          <span className="badge primaryBadge" aria-label="Open hands" />
+        ) : (
+          <button aria-label="Request open hands" disabled={Boolean(waitingForOpenHands) || Boolean(incomingOpenHandsRequest) || view.players.length !== 2} onClick={() => socket.emit("action:requestOpenHands", handleActionResult)}>
+          </button>
+        )}
+      </section>
 
       <section className="board">
         <div className="monsterPanel">
@@ -204,6 +216,14 @@ function EgicideTable({
             <span>怪物 {view.monstersLeft}</span>
           </div>
           <PlayerList players={view.players.map((player) => ({ ...player, seat: 0, bot: false }))} selfId={view.selfId} />
+          {view.handsRevealed && teammate && (
+            <div className="sharedHand">
+              <h2>{teammate.name} 的手牌</h2>
+              <div className="cards compact">
+                {view.teammateHand?.length ? view.teammateHand.map((card) => <CardFace card={card} key={card.id} />) : <span className="muted">已无手牌</span>}
+              </div>
+            </div>
+          )}
         </aside>
       </section>
 
@@ -241,6 +261,18 @@ function EgicideTable({
       </section>
 
       <GameLog log={view.log} />
+      {incomingOpenHandsRequest && teammate && (
+        <div className="modalBackdrop" role="presentation">
+          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="open-hands-title">
+            <h2 id="open-hands-title">{teammate.name} 请求明牌</h2>
+            <p>接受后，双方可在本局游戏中查看对方手牌。</p>
+            <div className="actions">
+              <button onClick={() => socket.emit("action:respondOpenHands", true, handleActionResult)}>接受</button>
+              <button className="secondary" onClick={() => socket.emit("action:respondOpenHands", false, handleActionResult)}>拒绝</button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
@@ -350,6 +382,25 @@ function LandlordTable({
         {selectedCards.length > 0 && <p className="hint">已选 {selectedCards.map(landlordCardName).join("、")}</p>}
         {error && <p className="error">{error}</p>}
       </section>
+
+      {view.phase === "finished" && view.remainingHands.length > 0 && (
+        <section className="landlordResultPanel">
+          <div className="resultHeader">
+            <h2>未出完的手牌</h2>
+            <span className="badge accentBadge">{view.winner === "landlord" ? "地主胜利" : "农民胜利"}</span>
+          </div>
+          <div className="remainingHands">
+            {view.remainingHands.map((hand) => (
+              <article className="remainingHand" key={hand.playerId}>
+                <h3>{hand.playerName} · {hand.cards.length} 张</h3>
+                <div className="turnCards">
+                  {hand.cards.map((card) => <LandlordCardFace card={card} compact key={card.id} />)}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <GameLog log={view.log} />
     </main>

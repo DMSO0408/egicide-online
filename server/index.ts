@@ -12,6 +12,8 @@ import {
   markDisconnected,
   playCards,
   reconnectPlayer,
+  requestOpenHands,
+  respondOpenHands,
   startGame,
   type GameRoom
 } from "./game";
@@ -122,6 +124,20 @@ io.on("connection", (socket) => {
     runAction(socket, ack, (room, playerId) => {
       if (room.gameType !== "egicide") throw new Error("当前房间不是 Egicide。");
       defend(room, playerId, cardIds);
+    });
+  });
+
+  socket.on("action:requestOpenHands", (ack) => {
+    runAction(socket, ack, (room, playerId) => {
+      if (room.gameType !== "egicide") throw new Error("\u5f53\u524d\u623f\u95f4\u4e0d\u662f Egicide\u3002");
+      requestOpenHands(room, playerId);
+    });
+  });
+
+  socket.on("action:respondOpenHands", (accepted, ack) => {
+    runAction(socket, ack, (room, playerId) => {
+      if (room.gameType !== "egicide") throw new Error("\u5f53\u524d\u623f\u95f4\u4e0d\u662f Egicide\u3002");
+      respondOpenHands(room, playerId, accepted);
     });
   });
 
