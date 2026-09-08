@@ -340,7 +340,7 @@ export function analyzeLandlordCards(cards: LandlordCard[], playerId = "", playe
     if (total === tripleValues.length * 3 && entries.every(([, count]) => count === 3)) {
       return play("airplane", tripleValues.at(-1)!, tripleValues.length);
     }
-    if (total === tripleValues.length * 4 && entries.every(([value, count]) => tripleValues.includes(value) ? count === 3 : count === 1)) {
+    if (total === tripleValues.length * 4 && entries.every(([value, count]) => tripleValues.includes(value) ? count === 3 : count <= 2)) {
       return play("airplaneSingles", tripleValues.at(-1)!, tripleValues.length);
     }
     if (total === tripleValues.length * 5 && entries.every(([value, count]) => tripleValues.includes(value) ? count === 3 : count === 2)) {
@@ -604,7 +604,7 @@ function addAirplanes(hand: LandlordCard[], groups: Map<number, LandlordCard[]>,
       const base = values.flatMap((value) => groups.get(value)!.slice(0, 3));
       add(base);
 
-      const singles = lowestDistinctSinglesExcluding(hand, values, values.length);
+      const singles = lowestExcluding(hand, values, values.length);
       if (singles) add([...base, ...singles]);
 
       const pairs = lowestPairAttachments(groups, values, values.length);
@@ -917,16 +917,6 @@ function findSequence(groups: Map<number, LandlordCard[]>, count: number, length
 function lowestExcluding(hand: LandlordCard[], excluded: number[], count: number): LandlordCard[] | undefined {
   const cards = hand.filter((card) => !excluded.includes(card.value)).sort((a, b) => a.value - b.value);
   return cards.length >= count ? cards.slice(0, count) : undefined;
-}
-
-function lowestDistinctSinglesExcluding(hand: LandlordCard[], excluded: number[], count: number): LandlordCard[] | undefined {
-  const groups = groupCardsByValue(hand);
-  const cards = [...groups.entries()]
-    .filter(([value]) => !excluded.includes(value))
-    .sort((a, b) => a[0] - b[0])
-    .slice(0, count)
-    .map(([, group]) => group[0]);
-  return cards.length === count ? cards : undefined;
 }
 
 function lowestPairAttachments(groups: Map<number, LandlordCard[]>, excluded: number[], count: number): LandlordCard[] | undefined {

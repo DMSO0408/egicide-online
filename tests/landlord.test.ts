@@ -26,6 +26,11 @@ describe("landlord rules", () => {
     expect(analyzeLandlordCards([c("3", "spades")])?.type).toBe("single");
     expect(analyzeLandlordCards([c("4", "spades"), c("4", "clubs")])?.type).toBe("pair");
     expect(analyzeLandlordCards([c("5", "spades"), c("5", "clubs"), c("5", "hearts")])?.type).toBe("triple");
+    expect(analyzeLandlordCards([
+      c("6", "spades"), c("6", "clubs"), c("6", "diamonds"),
+      c("7", "spades"), c("7", "clubs"), c("7", "diamonds"),
+      c("9", "spades"), c("9", "clubs"),
+    ])?.type).toBe("airplaneSingles");
     expect(analyzeLandlordCards([c("3", "spades"), c("4", "spades"), c("5", "spades"), c("6", "spades"), c("7", "spades")])?.type).toBe("straight");
     expect(analyzeLandlordCards([c("10", "spades"), c("J", "spades"), c("Q", "spades"), c("K", "spades"), c("A", "spades")])?.type).toBe("straight");
     expect(analyzeLandlordCards([c("J", "spades"), c("Q", "spades"), c("K", "spades"), c("A", "spades"), c("2", "spades")])).toBeUndefined();
