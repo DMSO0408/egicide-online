@@ -33,6 +33,8 @@
 body {
   margin: 0;
   min-width: 320px;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
   background:
     radial-gradient(circle at top left, rgb(245 158 11 / 14%), transparent 34rem),
     radial-gradient(circle at bottom right, rgb(17 106 102 / 13%), transparent 32rem),
@@ -921,22 +923,45 @@ h2 {
 
 @media (max-width: 760px) {
   .shell {
-    padding: 12px;
+    gap: 12px;
+    min-height: 100dvh;
+    padding: 10px;
+  }
+
+  .gameShell,
+  .landlordShell {
+    grid-template-rows: none;
   }
 
   .topbar {
+    gap: 10px;
+    min-height: 0;
+    padding: 12px;
     align-items: flex-start;
     flex-direction: column;
   }
 
   .topbarMeta,
   .actions {
+    gap: 8px;
     justify-content: flex-start;
     width: 100%;
   }
 
+  .topbarMeta .badge {
+    flex: 1 1 130px;
+    min-height: 34px;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .topbarMeta button {
+    flex: 1 1 96px;
+  }
+
   .board {
     grid-template-columns: 1fr;
+    gap: 12px;
   }
 
   .entry {
@@ -958,47 +983,156 @@ h2 {
     border-radius: 10px;
   }
 
+  .openHandsControl {
+    justify-content: stretch;
+  }
+
+  .openHandsControl .badge,
+  .openHandsControl button {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .monsterPanel,
+  .side,
+  .table,
+  .hand,
+  .landlordHandPanel,
+  .landlordResultPanel {
+    padding: 14px;
+  }
+
+  .monsterPanel {
+    gap: 12px;
+    min-height: 0;
+  }
+
+  .monsterPanel .card.large {
+    width: 94px;
+    height: 132px;
+    padding: 9px;
+  }
+
+  .monsterPanel .card.large strong {
+    font-size: 50px;
+  }
+
+  .meter {
+    width: 100%;
+  }
+
+  .cards {
+    gap: 6px;
+  }
+
+  .card {
+    width: 50px;
+    height: 70px;
+    padding: 5px;
+  }
+
+  .card strong {
+    font-size: 24px;
+  }
+
+  .handHeader .actions > button {
+    flex: 1 1 126px;
+  }
+
   .landlordBoard {
-    min-height: 650px;
+    min-height: 550px;
     align-items: start;
   }
 
   .landlordTable {
     width: 100%;
     height: auto;
-    min-height: 620px;
-    border-radius: var(--radius-lg);
+    min-height: 540px;
+    border-radius: 28px;
+  }
+
+  .feltGlow {
+    inset: 12px;
   }
 
   .bottomCards {
-    top: 16px;
+    top: 10px;
+    gap: 5px;
   }
 
   .landlordSeat {
-    width: calc(100% - 32px);
+    gap: 6px;
+    width: calc(100% - 24px);
+    padding: 8px;
+  }
+
+  .seatMain {
+    gap: 8px;
+  }
+
+  .avatarMark {
+    width: 34px;
+    height: 34px;
+  }
+
+  .seatText span,
+  .seatBadges .badge {
+    font-size: 12px;
+  }
+
+  .landlordSeat b {
+    min-width: 32px;
+    height: 28px;
+    font-size: 16px;
   }
 
   .seatLeft {
-    left: 16px;
-    top: 96px;
+    left: 12px;
+    top: 78px;
   }
 
   .seatRight {
-    left: 16px;
+    left: 12px;
     right: auto;
-    top: 220px;
+    top: 184px;
   }
 
   .seatSelf {
-    left: 16px;
-    bottom: 18px;
-    width: calc(100% - 32px);
+    left: 12px;
+    bottom: 12px;
+    width: calc(100% - 24px);
     transform: none;
   }
 
   .tableCenterStatus {
-    top: 56%;
-    min-width: calc(100% - 40px);
+    top: 58%;
+    gap: 6px;
+    min-width: calc(100% - 28px);
+  }
+
+  .centerCards {
+    min-height: 54px;
+    padding: 6px;
+  }
+
+  .seatCards .landlordCard.compactCard,
+  .centerCards .landlordCard.compactCard,
+  .bottomCards .landlordCard.compactCard {
+    width: 34px;
+    height: 50px;
+    padding: 3px;
+  }
+
+  .seatCards .landlordCard.compactCard span,
+  .centerCards .landlordCard.compactCard span,
+  .bottomCards .landlordCard.compactCard span {
+    font-size: 12px;
+  }
+
+  .seatCards .landlordCard.compactCard strong,
+  .centerCards .landlordCard.compactCard strong,
+  .bottomCards .landlordCard.compactCard strong {
+    font-size: 17px;
   }
 
   .monsterPanel {
@@ -1010,7 +1144,78 @@ h2 {
   }
 
   .landlordCard {
-    width: 58px;
-    height: 86px;
+    width: 54px;
+    height: 80px;
+  }
+
+  .landlordHand {
+    min-height: 112px;
+    padding: 14px 6px 10px;
+  }
+
+  .landlordHand .cardButton {
+    margin-left: -18px;
+  }
+
+  .modalBackdrop {
+    padding: 12px;
+  }
+
+  .modal {
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    padding: 18px;
+  }
+
+  .remainingHands {
+    grid-template-columns: 1fr;
+  }
+
+  .log {
+    max-height: 180px;
+  }
+}
+
+@media (max-width: 420px) {
+  .topbar > div:first-child {
+    gap: 4px 10px;
+  }
+
+  .topbar strong {
+    font-size: 18px;
+  }
+
+  .topbarMeta .badge {
+    flex-basis: calc(50% - 4px);
+  }
+
+  .landlordBoard {
+    min-height: 524px;
+  }
+
+  .landlordTable {
+    min-height: 514px;
+  }
+
+  .seatRight {
+    top: 176px;
+  }
+
+  .tableCenterStatus {
+    top: 57%;
+  }
+
+  .landlordCard {
+    width: 50px;
+    height: 74px;
+  }
+
+  .landlordHand .cardButton {
+    margin-left: -17px;
+  }
+
+  .resultHeader {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
